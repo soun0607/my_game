@@ -224,6 +224,12 @@ h2 {
   color: var(--muted);
 }
 
+.deploy-note {
+  margin-top: 12px;
+  font-size: 12px;
+  text-align: center;
+}
+
 @media (max-width: 480px) {
   .profile {
     width: min(100% - 40px, 760px);

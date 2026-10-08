@@ -1,0 +1,258 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Jua&display=swap');
+
+:root {
+  color-scheme: dark;
+  font-family: 'Jua', 'Malgun Gothic', sans-serif;
+  background: #151918;
+  color: #f0f1e9;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --muted: #9da7a0;
+  --accent: #b9ef75;
+  --line: rgba(226, 236, 222, 0.16);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background-image: linear-gradient(rgba(185, 239, 117, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(185, 239, 117, 0.025) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+button {
+  font: inherit;
+}
+
+.profile {
+  width: min(100% - 48px, 760px);
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: clamp(72px, 13vh, 132px) 0 32px;
+  display: flex;
+  flex-direction: column;
+}
+
+.intro {
+  padding-bottom: 64px;
+  border-bottom: 1px solid var(--line);
+}
+
+.eyebrow,
+.section-number,
+.game-index,
+.page-footer {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.eyebrow {
+  margin: 0 0 22px;
+  color: var(--muted);
+}
+
+.eyebrow span {
+  padding: 0 8px;
+  color: var(--accent);
+}
+
+h1 {
+  margin: 0;
+  color: #f4df64;
+  font-size: clamp(68px, 12vw, 104px);
+  font-weight: 400;
+  line-height: 1.12;
+}
+
+.subtitle {
+  margin: 18px 0 0;
+  color: #c1c9c0;
+  font-size: 20px;
+}
+
+.favorites {
+  padding-top: 44px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.section-number {
+  color: var(--accent);
+}
+
+h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 400;
+}
+
+.game-list {
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+
+.game-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  align-items: stretch;
+  border-bottom: 1px solid var(--line);
+}
+
+.game {
+  width: 100%;
+  min-height: 72px;
+  padding: 14px 4px;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: color 160ms ease, padding 160ms ease;
+}
+
+.game:hover,
+.game[aria-pressed='true'] {
+  padding-right: 0;
+  padding-left: 10px;
+  color: var(--accent);
+}
+
+.game:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.game-index {
+  color: var(--muted);
+}
+
+.game-name {
+  font-size: 17px;
+  overflow-wrap: anywhere;
+  transform-origin: left center;
+  transition: transform 160ms ease;
+}
+
+.game:hover .game-name {
+  transform: scale(1.03);
+}
+
+.game-link {
+  min-height: 72px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 160ms ease;
+}
+
+.game-link:hover,
+.game-link:focus-visible {
+  color: var(--accent);
+}
+
+.game-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -4px;
+}
+
+.selection {
+  min-height: 24px;
+  margin: 14px 0 0 60px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.game-ideas {
+  padding-top: 48px;
+}
+
+.idea-card + .idea-card {
+  margin-top: 24px;
+}
+
+.idea-title {
+  margin: 0 0 16px;
+  color: #f4df64;
+  font-size: 20px;
+  font-weight: 400;
+}
+
+.idea-details {
+  margin: 0;
+}
+
+.idea-details > div {
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.idea-details dt {
+  color: var(--accent);
+  font-size: 14px;
+}
+
+.idea-details dd {
+  margin: 6px 0 0;
+  color: #d8ddd6;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.page-footer {
+  margin-top: auto;
+  padding-top: 48px;
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+}
+
+@media (max-width: 480px) {
+  .profile {
+    width: min(100% - 40px, 760px);
+    padding-top: 72px;
+  }
+
+  .intro {
+    padding-bottom: 48px;
+  }
+
+  .game {
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .game-name {
+    font-size: 16px;
+  }
+
+  .selection {
+    margin-left: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

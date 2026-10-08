@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#151918">
+  <title>김소운 | 자기소개</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <main class="profile">
+    <header class="intro">
+      <p class="eyebrow">PROFILE <span aria-hidden="true">/</span> 01</p>
+      <h1>김소운</h1>
+      <p class="subtitle">2D그래픽 전공</p>
+    </header>
+
+    <section class="favorites" aria-labelledby="favorites-title">
+      <div class="section-heading">
+        <span class="section-number" aria-hidden="true">01</span>
+        <h2 id="favorites-title">좋아하는 게임</h2>
+      </div>
+      <ul class="game-list">
+        <li>
+          <button class="game" type="button" aria-pressed="false"><span class="game-index">01</span><span class="game-name">리그 오브 레전드</span></button>
+          <a class="game-link" href="https://www.leagueoflegends.com/ko-kr/" target="_blank" rel="noopener noreferrer" aria-label="리그 오브 레전드 공식 홈페이지 새 탭에서 열기" title="리그 오브 레전드 공식 홈페이지">↗</a>
+        </li>
+        <li>
+          <button class="game" type="button" aria-pressed="false"><span class="game-index">02</span><span class="game-name">원신</span></button>
+          <a class="game-link" href="https://genshin.hoyoverse.com/ko/" target="_blank" rel="noopener noreferrer" aria-label="원신 공식 홈페이지 새 탭에서 열기" title="원신 공식 홈페이지">↗</a>
+        </li>
+        <li>
+          <button class="game" type="button" aria-pressed="false"><span class="game-index">03</span><span class="game-name">DJ MAX</span></button>
+          <a class="game-link" href="https://djmaxrespect.com/" target="_blank" rel="noopener noreferrer" aria-label="DJ MAX 공식 홈페이지 새 탭에서 열기" title="DJ MAX 공식 홈페이지">↗</a>
+        </li>
+      </ul>
+      <p class="selection" aria-live="polite"></p>
+    </section>
+
+    <section class="game-ideas" aria-labelledby="game-ideas-title">
+      <div class="section-heading">
+        <span class="section-number" aria-hidden="true">02</span>
+        <h2 id="game-ideas-title">만든 게임 아이디어 칸</h2>
+      </div>
+      <article class="idea-card" aria-labelledby="idea-one-title">
+        <h3 id="idea-one-title" class="idea-title">아이디어 1: 오늘 밤 주인공은 나야나</h3>
+        <dl class="idea-details">
+          <div>
+            <dt>한 줄 설명</dt>
+            <dd>댄스 파티에서 1등을 하고 싶은 플레이어가 NPC와의 댄스 경쟁을 통해 1등을 노리는 게임</dd>
+          </div>
+          <div>
+            <dt>플레이어가 하는 일</dt>
+            <dd>방향키와 스페이스바를 이용해 내려오는 타일을 리듬에 맞춰 누르면 춤을 박자에 맞춰 춘다</dd>
+          </div>
+          <div>
+            <dt>게임이 끝나는 조건</dt>
+            <dd>경쟁에서 지면 패배, 계속 승리하여 1등을 하면 승리</dd>
+          </div>
+        </dl>
+      </article>
+      <article class="idea-card" aria-labelledby="idea-two-title">
+        <h3 id="idea-two-title" class="idea-title">아이디어 2: 맘마미아</h3>
+        <dl class="idea-details">
+          <div>
+            <dt>한 줄 설명</dt>
+            <dd>미아가 되어버린 플레이어가 이곳저곳을 돌아다니며 정해진 시간 내에 경찰서까지 도달하는 게임</dd>
+          </div>
+          <div>
+            <dt>플레이어가 하는 일</dt>
+            <dd>wasd를 통해 앞과 뒤, 좌우로 장소를 이동한다.</dd>
+          </div>
+          <div>
+            <dt>게임이 끝나는 조건</dt>
+            <dd>시간이 너무 늦으면 실패, 정해진 시간 내에 도착하면 성공</dd>
+          </div>
+        </dl>
+      </article>
+      <article class="idea-card" aria-labelledby="idea-three-title">
+        <h3 id="idea-three-title" class="idea-title">아이디어 3: Love choice</h3>
+        <dl class="idea-details">
+          <div>
+            <dt>한 줄 설명</dt>
+            <dd>짝사랑하는 여자와 데이트를 하는 게임</dd>
+          </div>
+          <div>
+            <dt>플레이어가 하는 일</dt>
+            <dd>데이트 코스 짜기, 각 상황에 알맞는 대사 클릭하기</dd>
+          </div>
+          <div>
+            <dt>게임이 끝나는 조건</dt>
+            <dd>호감도가 0이 되면 실패, 80 이상이면 성공</dd>
+          </div>
+        </dl>
+      </article>
+    </section>
+
+    <footer class="page-footer"><span>소운의 작은 소개</span><time id="today-date"></time></footer>
+  </main>
+</body>
+</html>

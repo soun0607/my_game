@@ -1,15 +1,15 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Jua&display=swap');
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
   font-family: 'Jua', 'Malgun Gothic', sans-serif;
-  background: #151918;
-  color: #f0f1e9;
+  background: #faf4f0;
+  color: #6b5d5a;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --muted: #9da7a0;
-  --accent: #b9ef75;
-  --line: rgba(226, 236, 222, 0.16);
+  --muted: #a39591;
+  --accent: #b07d84;
+  --line: rgba(176, 125, 132, 0.22);
 }
 
 * {
@@ -20,9 +20,8 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
-  background-image: linear-gradient(rgba(185, 239, 117, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(185, 239, 117, 0.025) 1px, transparent 1px);
-  background-size: 48px 48px;
+  background-image: radial-gradient(rgba(212, 165, 165, 0.28) 2px, transparent 2px);
+  background-size: 32px 32px;
 }
 
 button {
@@ -64,7 +63,7 @@ button {
 
 h1 {
   margin: 0;
-  color: #f4df64;
+  color: #b98089;
   font-size: clamp(68px, 12vw, 104px);
   font-weight: 400;
   line-height: 1.12;
@@ -72,7 +71,7 @@ h1 {
 
 .subtitle {
   margin: 18px 0 0;
-  color: #c1c9c0;
+  color: #8a7d79;
   font-size: 20px;
 }
 
@@ -190,7 +189,7 @@ h2 {
 
 .idea-title {
   margin: 0 0 16px;
-  color: #f4df64;
+  color: #8a9a7e;
   font-size: 20px;
   font-weight: 400;
 }
@@ -211,7 +210,7 @@ h2 {
 
 .idea-details dd {
   margin: 6px 0 0;
-  color: #d8ddd6;
+  color: #6b5d5a;
   font-size: 16px;
   line-height: 1.7;
 }

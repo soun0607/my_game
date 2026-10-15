@@ -18,7 +18,7 @@ ctx.fillRect(0, 550, 50, 50);
 
 // 4. (400, 300)에 흰 사각형 → 가운데
 ctx.fillStyle = "white";
-ctx.fillRect(400, 100, 20, 20);
+ctx.fillRect(400, 300, 40, 40);
 
 // 5. 각 사각형 옆에 좌표를 흰 글씨로 쓴다
 ctx.fillStyle = "white";            // 글자 색 (글자 쓰기 전에 정해야 한다)
@@ -26,4 +26,4 @@ ctx.font = "14px sans-serif";       // 글씨 크기 14
 ctx.fillText("(0, 0)", 58, 30);     // 빨간 사각형 오른쪽
 ctx.fillText("(750, 0)", 685, 30);  // 노란 사각형 왼쪽
 ctx.fillText("(0, 550)", 58, 580);  // 초록 사각형 오른쪽
-ctx.fillText("(400, 100)", 428, 115); // 흰 사각형 오른쪽
+ctx.fillText("(400, 300)", 428, 115); // 흰 사각형 오른쪽

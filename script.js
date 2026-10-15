@@ -27,7 +27,7 @@ const PLAYER_X = 140;
 const PLAYER_Y = 400;
 const BOT_X = 660;
 const BOT_Y = 400;
-const HEAD_RADIUS = 22;    // 머리 반지름
+const HEAD_RADIUS = 24;    // 머리 반지름
 const BODY_WIDTH = 50;     // 몸 가로
 const BODY_HEIGHT = 70;    // 몸 세로
 

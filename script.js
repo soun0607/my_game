@@ -37,7 +37,7 @@ const DJ_Y = 30;           // DJ 머리 중심 y
 
 // 색
 const STAGE_COLOR = "#2a1b3d";   // 무대 배경 (어두운 보라)
-const PLAYER_COLOR = "#f4a6c0";  // 나 (분홍)
+const PLAYER_COLOR = "#a6e8f4";  // 나 (분홍)
 const BOT_COLOR = "#8fd18f";     // 초급 봇 (초록)
 const NOTE_COLORS = ["#ff8fa3", "#ffd166", "#8fd3ff", "#c3a6ff"]; // 레인별 노트 색
 const SPACE_NOTE_COLOR = "#ffffff";

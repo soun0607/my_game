@@ -21,7 +21,7 @@ let notes = [
   { lane: 3, y: 380 },
 ];
 let spaceNoteY = 430;      // Space 노트(레인 4개를 가로지르는 긴 막대)의 y
-let noteSpeed = 4;         // 노트가 한 프레임에 아래로 내려오는 거리 (+는 아래쪽)
+let noteSpeed = 8;         // 노트가 한 프레임에 아래로 내려오는 거리 (+는 아래쪽)
 const NOTE_SIZE = 50;      // 노트 그림 크기 (가로 = 세로)
 const NOTE_START_Y = LANE_TOP;                // 노트가 다시 나타나는 y (레인 맨 위)
 const NOTE_END_Y = LANE_TOP + LANE_HEIGHT;    // 노트가 사라지는 y (레인 맨 아래)

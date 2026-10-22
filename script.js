@@ -16,6 +16,7 @@ const JUDGE_Y = 500;
 // 노트: lane = 몇 번째 레인(0~3), y = 지금 세로 위치
 // y는 매 프레임 바뀌는 "상태"라서 let으로 만든다
 let notes = [
+  { lane: 1, y: 180 },
   { lane: 0, y: 250 },
   { lane: 2, y: 300 },
   { lane: 3, y: 380 },
@@ -203,6 +204,9 @@ function gameLoop() {
     // 레인 맨 아래로 빠져나가면 레인 맨 위에서 다시 나타난다
     if (note.y + NOTE_SIZE > NOTE_END_Y) {
       note.y = NOTE_START_Y;
+      // 다시 나타날 때 레인을 무작위로 고른다 (0~3 중 하나: ← ↓ ↑ →)
+      // Math.random()은 0 이상 1 미만의 아무 수 → 4를 곱하고 소수점을 버리면 0, 1, 2, 3 중 하나
+      note.lane = Math.floor(Math.random() * LANE_COUNT);
     }
   }
   spaceNoteY = spaceNoteY + noteSpeed;

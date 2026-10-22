@@ -21,6 +21,7 @@ let notes = [
   { lane: 2, y: 300 },
   { lane: 3, y: 380 },
 ];
+let botPose = "bot";      // 지금 봇이 하고 있는 포즈 (그림 이름). 노트가 지나갈 때마다 바뀐다
 let frameCount = 0;        // 게임이 시작된 뒤 지난 프레임 수 (반짝이 깜빡임에 쓴다)
 let spaceNoteY = 430;      // Space 노트(레인 4개를 가로지르는 긴 막대)의 y
 // 스테이지별 노트 속도 (속도 튜닝으로 정함): 초급 2 / 중급 4 / 상급 6
@@ -42,10 +43,12 @@ const DJ_X = 400;          // DJ 가운데 x
 const DJ_Y = 0;            // DJ 그림 위쪽 y
 
 // 관중: 화면 맨 아래 한 줄
-const CROWD_Y = 530;       // 관중 그림 위쪽 y (아래가 화면 밖으로 잘려 머리만 보인다)
-const CROWD_GAP = 62;      // 관중 사이 간격
-const CROWD_WIDTH = 72;    // 관중 그림 가로 (원본 96의 3/4)
-const CROWD_HEIGHT = 96;   // 관중 그림 세로 (원본 128의 3/4)
+const CROWD_Y = 515;       // 관중 그림 위쪽 y (아래가 화면 밖으로 잘려 상반신만 보인다)
+const CROWD_GAP = 74;      // 관중 사이 간격
+const CROWD_WIDTH = 90;    // 관중 그림 가로 (원본 96보다 조금 작게)
+const CROWD_HEIGHT = 120;  // 관중 그림 세로 (원본 128보다 조금 작게)
+const CROWD_JUMP = 10;     // 관중이 들썩일 때 올라가는 최대 높이
+const CROWD_JUMP_SPEED = 0.12; // 들썩이는 빠르기 (클수록 빠르다)
 
 // 색
 const STAGE_COLOR = "#2a1b3d";   // 무대 배경 (어두운 보라)
@@ -55,6 +58,11 @@ const STAGE_COLOR = "#2a1b3d";   // 무대 배경 (어두운 보라)
 const IMAGE_FILES = {
   player: "assets/player.png",
   bot: "assets/bot.png",
+  bot_left: "assets/bot_left.png",     // ← 발차기
+  bot_down: "assets/bot_down.png",     // ↓ 웅크리기
+  bot_up: "assets/bot_up.png",         // ↑ 점프
+  bot_right: "assets/bot_right.png",   // → 만세
+  bot_space: "assets/bot_space.png",   // Space 팔 벌리기
   dj: "assets/dj.png",
   crowd1: "assets/crowd1.png",
   crowd2: "assets/crowd2.png",
@@ -186,7 +194,7 @@ function draw() {
   // 8. 댄서: 나(왼쪽)와 봇(오른쪽). 그림의 가운데 아래가 발끝 위치에 오게 그린다
   const dancerTop = DANCER_FEET_Y - DANCER_HEIGHT;
   ctx.drawImage(images.player, PLAYER_X - DANCER_WIDTH / 2, dancerTop, DANCER_WIDTH, DANCER_HEIGHT);
-  ctx.drawImage(images.bot, BOT_X - DANCER_WIDTH / 2, dancerTop, DANCER_WIDTH, DANCER_HEIGHT);
+  ctx.drawImage(images[botPose], BOT_X - DANCER_WIDTH / 2, dancerTop, DANCER_WIDTH, DANCER_HEIGHT);
   ctx.fillStyle = "white";
   ctx.font = "16px sans-serif";
   ctx.textAlign = "center";
@@ -196,7 +204,10 @@ function draw() {
   // 9. 관중: 무대를 바라보는 뒷모습 4종을 번갈아 한 줄로 세운다
   const crowd = [images.crowd1, images.crowd2, images.crowd3, images.crowd4];
   for (let i = 0; i * CROWD_GAP < canvas.width + CROWD_GAP; i++) {
-    ctx.drawImage(crowd[i % 4], i * CROWD_GAP - 28, CROWD_Y, CROWD_WIDTH, CROWD_HEIGHT);
+    // Math.abs(Math.sin(...))는 0 ~ 1 사이를 오가는 값 → 관중이 위로 통통 튄다
+    // + i * 0.7 을 해서 사람마다 튀는 타이밍을 다르게 한다 (파도타기처럼 보인다)
+    const jump = Math.abs(Math.sin(frameCount * CROWD_JUMP_SPEED + i * 0.7)) * CROWD_JUMP;
+    ctx.drawImage(crowd[i % 4], i * CROWD_GAP - 36, CROWD_Y - jump, CROWD_WIDTH, CROWD_HEIGHT);
   }
 }
 
@@ -211,6 +222,7 @@ function gameLoop() {
     note.y = note.y + noteSpeed;
     // 레인 맨 아래로 빠져나가면 레인 맨 위에서 다시 나타난다
     if (note.y + NOTE_SIZE > NOTE_END_Y) {
+      botPose = "bot_" + LANE_NAMES[note.lane];   // 봇이 방금 지나간 노트 방향의 포즈를 취한다
       note.y = NOTE_START_Y;
       // 다시 나타날 때 레인을 무작위로 고른다 (0~3 중 하나: ← ↓ ↑ →)
       // Math.random()은 0 이상 1 미만의 아무 수 → 4를 곱하고 소수점을 버리면 0, 1, 2, 3 중 하나
@@ -219,6 +231,7 @@ function gameLoop() {
   }
   spaceNoteY = spaceNoteY + noteSpeed;
   if (spaceNoteY + 40 > NOTE_END_Y) {          // Space 노트 그림 높이는 40
+    botPose = "bot_space";                       // Space 노트가 지나가면 팔 벌리기 포즈
     spaceNoteY = NOTE_START_Y;
   }
 

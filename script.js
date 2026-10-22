@@ -74,7 +74,8 @@ for (const name in IMAGE_FILES) {
   images[name] = new Image();
   images[name].onload = function () {
     loadedCount++;
-    if (loadedCount === totalCount) draw();
+    // 4장 Step 1: 연습용 공을 보는 동안 내 게임 화면은 잠시 꺼 둔다 (Step 4에서 다시 살린다)
+    // if (loadedCount === totalCount) draw();
   };
   images[name].src = IMAGE_FILES[name];
 }
@@ -187,3 +188,36 @@ function draw() {
     ctx.drawImage(crowd[i % 4], i * CROWD_GAP - 28, CROWD_Y, CROWD_WIDTH, CROWD_HEIGHT);
   }
 }
+
+// ===== 4장 연습: 흰 공 하나가 좌우로 왕복한다 =====
+
+// 공의 상태 (계속 바뀌는 값이라 let)
+let ballX = 400;           // 공의 가로 위치 (원의 중심)
+let ballY = 300;           // 공의 세로 위치 (원의 중심)
+let speedX = 3;            // 한 프레임에 가로로 움직이는 거리 (+는 오른쪽, -는 왼쪽)
+const BALL_RADIUS = 20;    // 공의 반지름 (바뀌지 않는 값이라 const)
+
+function gameLoop() {
+  // ① 지우기: 이전 프레임에 그린 것을 모두 지운다
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // ② 계산: 공을 속도만큼 옮긴다
+  ballX = ballX + speedX;
+
+  // 화면 좌우 끝에 닿으면 속도의 부호를 뒤집어 반대 방향으로 튕긴다
+  // (원의 x는 중심이라 반지름만큼 더하고 빼서 공의 가장자리로 판단한다)
+  if (ballX + BALL_RADIUS > canvas.width || ballX - BALL_RADIUS < 0) {
+    speedX = -speedX;
+  }
+
+  // ③ 그리기: 바뀐 위치에 흰 공을 그린다
+  ctx.fillStyle = "white";
+  ctx.beginPath();
+  ctx.arc(ballX, ballY, BALL_RADIUS, 0, Math.PI * 2);
+  ctx.fill();
+
+  // ④ 다음 프레임에 gameLoop를 또 불러 달라고 브라우저에 부탁한다
+  requestAnimationFrame(gameLoop);
+}
+
+gameLoop();   // 첫 시동: 이 한 줄이 있어야 루프가 시작된다

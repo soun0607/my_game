@@ -13,14 +13,18 @@ const LANE_COUNT = 4;      // 레인 개수 (← ↓ ↑ →)
 // 판정선: 노트가 여기 닿을 때 키를 누른다
 const JUDGE_Y = 500;
 
-// 노트: [몇 번째 레인(0~3), y 위치]
-const NOTES = [
-  [0, 250],
-  [2, 300],
-  [3, 380],
+// 노트: lane = 몇 번째 레인(0~3), y = 지금 세로 위치
+// y는 매 프레임 바뀌는 "상태"라서 let으로 만든다
+let notes = [
+  { lane: 0, y: 250 },
+  { lane: 2, y: 300 },
+  { lane: 3, y: 380 },
 ];
+let spaceNoteY = 430;      // Space 노트(레인 4개를 가로지르는 긴 막대)의 y
+let noteSpeed = 2;         // 노트가 한 프레임에 아래로 내려오는 거리 (+는 아래쪽)
 const NOTE_SIZE = 50;      // 노트 그림 크기 (가로 = 세로)
-const SPACE_NOTE_Y = 430;  // Space 노트(레인 4개를 가로지르는 긴 막대)의 y
+const NOTE_START_Y = LANE_TOP;                // 노트가 다시 나타나는 y (레인 맨 위)
+const NOTE_END_Y = LANE_TOP + LANE_HEIGHT;    // 노트가 사라지는 y (레인 맨 아래)
 
 // 캐릭터: (x, y)는 그림의 가운데 아래(발끝) 위치
 const PLAYER_X = 140;
@@ -74,8 +78,7 @@ for (const name in IMAGE_FILES) {
   images[name] = new Image();
   images[name].onload = function () {
     loadedCount++;
-    // 4장 Step 1: 연습용 공을 보는 동안 내 게임 화면은 잠시 꺼 둔다 (Step 4에서 다시 살린다)
-    // if (loadedCount === totalCount) draw();
+    if (loadedCount === totalCount) gameLoop();   // 그림을 다 불러온 뒤에 게임 루프를 시작한다
   };
   images[name].src = IMAGE_FILES[name];
 }
@@ -162,15 +165,15 @@ function draw() {
   }
 
   // 6. 노트: 레인 위에 내려오는 중인 화살표 키 그림
-  for (const [lane, y] of NOTES) {
-    const x = LANE_X + lane * LANE_WIDTH + (LANE_WIDTH - NOTE_SIZE) / 2;
-    ctx.drawImage(images["note_" + LANE_NAMES[lane]], x, y, NOTE_SIZE, NOTE_SIZE);
+  for (const note of notes) {
+    const x = LANE_X + note.lane * LANE_WIDTH + (LANE_WIDTH - NOTE_SIZE) / 2;
+    ctx.drawImage(images["note_" + LANE_NAMES[note.lane]], x, note.y, NOTE_SIZE, NOTE_SIZE);
   }
 
   // 7. Space 노트: 레인 4개를 가로지르는 긴 막대 + 가운데에 Space 키 그림
   ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
-  ctx.fillRect(LANE_X + 5, SPACE_NOTE_Y + 14, LANE_WIDTH * LANE_COUNT - 10, 12);
-  ctx.drawImage(images.note_space, DJ_X - 20, SPACE_NOTE_Y, 40, 40);
+  ctx.fillRect(LANE_X + 5, spaceNoteY + 14, LANE_WIDTH * LANE_COUNT - 10, 12);
+  ctx.drawImage(images.note_space, DJ_X - 20, spaceNoteY, 40, 40);
 
   // 8. 댄서: 나(왼쪽)와 봇(오른쪽). 그림의 가운데 아래가 발끝 위치에 오게 그린다
   const dancerTop = DANCER_FEET_Y - DANCER_HEIGHT;
@@ -189,35 +192,27 @@ function draw() {
   }
 }
 
-// ===== 4장 연습: 흰 공 하나가 좌우로 왕복한다 =====
-
-// 공의 상태 (계속 바뀌는 값이라 let)
-let ballX = 400;           // 공의 가로 위치 (원의 중심)
-let ballY = 300;           // 공의 세로 위치 (원의 중심)
-let speedX = 3;            // 한 프레임에 가로로 움직이는 거리 (+는 오른쪽, -는 왼쪽)
-const BALL_RADIUS = 20;    // 공의 반지름 (바뀌지 않는 값이라 const)
-
+// ===== 게임 루프: 지우기 → 계산 → 그리기를 1초에 약 60번 반복한다 =====
 function gameLoop() {
   // ① 지우기: 이전 프레임에 그린 것을 모두 지운다
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // ② 계산: 공을 속도만큼 옮긴다
-  ballX = ballX + speedX;
-
-  // 화면 좌우 끝에 닿으면 속도의 부호를 뒤집어 반대 방향으로 튕긴다
-  // (원의 x는 중심이라 반지름만큼 더하고 빼서 공의 가장자리로 판단한다)
-  if (ballX + BALL_RADIUS > canvas.width || ballX - BALL_RADIUS < 0) {
-    speedX = -speedX;
+  // ② 계산: 노트를 속도만큼 아래로 내린다
+  for (const note of notes) {
+    note.y = note.y + noteSpeed;
+    // 레인 맨 아래로 빠져나가면 레인 맨 위에서 다시 나타난다
+    if (note.y + NOTE_SIZE > NOTE_END_Y) {
+      note.y = NOTE_START_Y;
+    }
+  }
+  spaceNoteY = spaceNoteY + noteSpeed;
+  if (spaceNoteY + 40 > NOTE_END_Y) {          // Space 노트 그림 높이는 40
+    spaceNoteY = NOTE_START_Y;
   }
 
-  // ③ 그리기: 바뀐 위치에 흰 공을 그린다
-  ctx.fillStyle = "white";
-  ctx.beginPath();
-  ctx.arc(ballX, ballY, BALL_RADIUS, 0, Math.PI * 2);
-  ctx.fill();
+  // ③ 그리기: 바뀐 위치대로 무대 전체를 다시 그린다
+  draw();
 
   // ④ 다음 프레임에 gameLoop를 또 불러 달라고 브라우저에 부탁한다
   requestAnimationFrame(gameLoop);
 }
-
-gameLoop();   // 첫 시동: 이 한 줄이 있어야 루프가 시작된다

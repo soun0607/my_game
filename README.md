@@ -20,6 +20,6 @@
 
 | 파일 | 원본 | 출처 |
 |---|---|---|
-| player.png, bot.png, dj.png, crowd1~4.png | Toon Characters (femalePerson cheer0, malePerson cheer1, maleAdventurer interact, 각 캐릭터 back) | https://kenney.nl/assets/toon-characters |
+| player.png, player_left/down/up/right/space.png, bot.png, dj.png, crowd1~4.png | Toon Characters (femalePerson cheer0·kick·duck·jump·cheer1·wide, malePerson cheer1, maleAdventurer interact, 각 캐릭터 back) | https://kenney.nl/assets/toon-characters |
 | note_*.png, target_*.png, note_space.png | Input Prompts (keyboard_arrow_*, keyboard_space) | https://kenney.nl/assets/input-prompts |
 | sparkle.png | Particle Pack (star_06) | https://kenney.nl/assets/particle-pack |

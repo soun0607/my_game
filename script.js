@@ -41,7 +41,7 @@ let playerPose = "player"; // 지금 내 캐릭터가 하고 있는 포즈 (그�
 // 판정 등급: 정확도 = 판정선에 얼마나 가깝게 눌렀는가 (판정선 한가운데 100%, 판정 범위 끝 0%)
 const PERFECT_ACCURACY = 0.90;  // 90% 이상 → PERFECT
 const GREAT_ACCURACY = 0.70;    // 70% 이상 ~ 90% 미만 → GREAT
-const MISS_ACCURACY = 0.30;     // 30% 초과 ~ 70% 미만 → GOOD, 30% 이하 → MISS (너무 일찍/늦게 눌렀다)
+const MISS_ACCURACY = 0.20;     // 20% 이상 ~ 70% 미만 → GOOD, 20% 미만 → MISS (너무 일찍/늦게 눌렀다)
 const JUDGE_SHOW_FRAMES = 40;   // 판정 글자를 화면에 띄워 두는 시간 (프레임 수, 60 = 약 1초)
 let judgeText = "";        // 지금 띄울 판정 글자 ("PERFECT" / "GREAT" / "GOOD" / "MISS")
 let judgeTimer = 0;        // 판정 글자가 사라지기까지 남은 프레임 수
@@ -183,13 +183,9 @@ function draw() {
   ctx.textAlign = "right";
   ctx.fillText("봇: 0", 780, 35);                  // 오른쪽 위: 봇 점수 (x=780에서 끝나게)
   ctx.font = "16px sans-serif";
-  ctx.textAlign = "left";
-  ctx.fillText("실패: 0/5", 20, 62);               // 내 실패 횟수
-  ctx.textAlign = "right";
-  ctx.fillText("실패: 0/5", 780, 62);              // 봇 실패 횟수
   ctx.textAlign = "center";
   ctx.fillText("STAGE 1 초급", 400, 128);          // 가운데: 스테이지
-  ctx.fillText("남은 시간: 60", 400, 146);         // 가운데: 남은 시간
+  ctx.fillText("남은 시간: 90", 400, 146);         // 가운데: 남은 시간
 
   // 4. 레인 4개: 위는 투명, 아래로 갈수록 진해지는 칸 + 테두리
   const laneGradient = ctx.createLinearGradient(0, LANE_TOP, 0, LANE_TOP + LANE_HEIGHT);
@@ -348,7 +344,7 @@ function showJudge(distance, effectX, wide) {
     judgeText = "PERFECT";
   } else if (accuracy >= GREAT_ACCURACY) {
     judgeText = "GREAT";
-  } else if (accuracy > MISS_ACCURACY) {
+  } else if (accuracy >= MISS_ACCURACY) {
     judgeText = "GOOD";
   } else {
     judgeText = "MISS";

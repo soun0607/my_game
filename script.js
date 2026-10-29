@@ -38,6 +38,13 @@ const keys = {};           // 지금 눌려 있는 키를 적어 두는 메모�
 const prevKeys = {};       // 지난 프레임에 눌려 있던 키 (이번 프레임에 "새로" 눌렸는지 알아내는 데 쓴다)
 let playerPose = "player"; // 지금 내 캐릭터가 하고 있는 포즈 (그림 이름)
 
+// 판정 등급: 정확도 = 판정선에 얼마나 가깝게 눌렀는가 (판정선 한가운데 100%, 판정 범위 끝 0%)
+const PERFECT_ACCURACY = 0.90;  // 90% 이상 → PERFECT
+const GREAT_ACCURACY = 0.70;    // 70% 이상 ~ 90% 미만 → GREAT, 그 아래 → GOOD
+const JUDGE_SHOW_FRAMES = 40;   // 판정 글자를 화면에 띄워 두는 시간 (프레임 수, 60 = 약 1초)
+let judgeText = "";        // 지금 띄울 판정 글자 ("PERFECT" / "GREAT" / "GOOD")
+let judgeTimer = 0;        // 판정 글자가 사라지기까지 남은 프레임 수
+
 let botPose = "bot";      // 지금 봇이 하고 있는 포즈 (그림 이름). 노트가 지나갈 때마다 바뀐다
 let frameCount = 0;        // 게임이 시작된 뒤 지난 프레임 수 (반짝이 깜빡임에 쓴다)
 let spaceNoteY = lineY;    // Space 노트(레인 4개를 가로지르는 긴 막대)의 y. 줄 맨 뒤에서 시작한다
@@ -217,6 +224,17 @@ function draw() {
   ctx.drawImage(images.note_space, DJ_X - 20, spaceNoteY, 40, 40);
   }
 
+  // 7-1. 판정 글자: 레인 위쪽에 크게 띄우고, 시간이 지날수록 흐려진다
+  if (judgeTimer > 0) {
+    const JUDGE_COLORS = { PERFECT: "#ffd166", GREAT: "#8fd3ff", GOOD: "#b8f2a0" };
+    ctx.globalAlpha = judgeTimer / JUDGE_SHOW_FRAMES;  // 남은 시간에 비례해서 투명해진다 (1 → 0)
+    ctx.fillStyle = JUDGE_COLORS[judgeText];
+    ctx.font = "bold 40px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(judgeText, LANE_X + (LANE_WIDTH * LANE_COUNT) / 2, LANE_TOP + 90);   // 레인 맨 위에서 90px 아래
+    ctx.globalAlpha = 1;
+  }
+
   // 8. 댄서: 나(왼쪽)와 봇(오른쪽). 그림의 가운데 아래가 발끝 위치에 오게 그린다
   const dancerTop = DANCER_FEET_Y - DANCER_HEIGHT;
   ctx.drawImage(images[playerPose], PLAYER_X - DANCER_WIDTH / 2, dancerTop, DANCER_WIDTH, DANCER_HEIGHT);
@@ -277,11 +295,26 @@ function lastNote(except) {
 }
 
 // 게임 키 하나를 눌렀을 때 할 일: 그 방향 포즈를 취하고, 판정선 근처의 노트를 맞췄는지 확인한다
+// 노트를 맞췄을 때: 판정선과의 거리로 정확도를 계산해 판정 등급을 정하고, 화면에 띄울 준비를 한다
+function showJudge(distance) {
+  const accuracy = 1 - distance / JUDGE_RANGE;   // 거리 0이면 1(100%), 판정 범위 끝이면 0(0%)
+  if (accuracy >= PERFECT_ACCURACY) {
+    judgeText = "PERFECT";
+  } else if (accuracy >= GREAT_ACCURACY) {
+    judgeText = "GREAT";
+  } else {
+    judgeText = "GOOD";
+  }
+  judgeTimer = JUDGE_SHOW_FRAMES;                 // 지금부터 JUDGE_SHOW_FRAMES 동안 보여 준다
+}
+
 function pressKey(key) {
   if (key === " ") {
     playerPose = "player_space";
     // Space 노트의 가운데(그림 높이 40의 절반 = 20)가 판정선 근처에 있으면 맞춘 것
-    if (Math.abs(spaceNoteY + 20 - JUDGE_Y) <= JUDGE_RANGE) {
+    const distance = Math.abs(spaceNoteY + 20 - JUDGE_Y);
+    if (distance <= JUDGE_RANGE) {
+      showJudge(distance);
       spaceNoteY = nextSpawnY("space");
     }
     return;
@@ -291,7 +324,9 @@ function pressKey(key) {
   for (const note of notes) {
     const noteCenter = note.y + NOTE_SIZE / 2;     // 노트 그림의 세로 가운데
     // 같은 방향이고, 가운데가 판정선에서 JUDGE_RANGE 안에 있으면 맞춘 것 → 노트를 위로 돌려보낸다
-    if (note.lane === lane && Math.abs(noteCenter - JUDGE_Y) <= JUDGE_RANGE) {
+    const distance = Math.abs(noteCenter - JUDGE_Y);  // 판정선에서 몇 px 떨어져 있는가
+    if (note.lane === lane && distance <= JUDGE_RANGE) {
+      showJudge(distance);
       respawnNote(note);
       return;                                      // 한 번 누르면 노트 하나만 맞춘다
     }
@@ -320,6 +355,7 @@ function gameLoop() {
 
   // ② 계산: 프레임 수를 세고, 키 입력을 판정하고, 노트를 속도만큼 아래로 내린다
   frameCount = frameCount + 1;
+  if (judgeTimer > 0) judgeTimer = judgeTimer - 1;   // 판정 글자가 사라질 때까지 남은 시간을 줄인다
 
   // 방식 B: keys 메모장을 보고 판정한다
   if (INPUT_MODE === "B") {

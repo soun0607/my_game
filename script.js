@@ -16,10 +16,10 @@ const JUDGE_Y = 500;
 // 노트: lane = 몇 번째 레인(0~3), y = 지금 세로 위치
 // y는 매 프레임 바뀌는 "상태"라서 let으로 만든다
 let notes = [
-  { lane: 1, y: 180 },
-  { lane: 0, y: 250 },
-  { lane: 2, y: 300 },
-  { lane: 3, y: 380 },
+  { lane: 1, y: 150 },
+  { lane: 0, y: 240 },
+  { lane: 2, y: 330 },
+  { lane: 3, y: 420 },
 ];
 // ===== 입력과 판정 (5장) =====
 const INPUT_MODE = "B";    // 조작 방식. "A" = 키 이벤트 안에서 바로 판정 (비교 실험용), "B" = keys에 기록하고 게임 루프에서 판정
@@ -32,7 +32,8 @@ let playerPose = "player"; // 지금 내 캐릭터가 하고 있는 포즈 (그�
 
 let botPose = "bot";      // 지금 봇이 하고 있는 포즈 (그림 이름). 노트가 지나갈 때마다 바뀐다
 let frameCount = 0;        // 게임이 시작된 뒤 지난 프레임 수 (반짝이 깜빡임에 쓴다)
-let spaceNoteY = 430;      // Space 노트(레인 4개를 가로지르는 긴 막대)의 y
+let spaceNoteY = 60;       // Space 노트(레인 4개를 가로지르는 긴 막대)의 y. 레인 위(150)보다 위에 있으면 아직 안 보인다
+const NOTE_GAP = 90;       // 노트끼리의 최소 세로 간격 (노트가 겹치지 않게)
 // 스테이지별 노트 속도 (속도 튜닝으로 정함): 초급 2 / 중급 4 / 상급 6
 const STAGE_SPEEDS = [2, 4, 6];
 let noteSpeed = STAGE_SPEEDS[0];   // 지금은 스테이지 1(초급). 노트가 한 프레임에 아래로 내려오는 거리
@@ -68,14 +69,14 @@ const IMAGE_FILES = {
   player: "assets/player.png",
   player_left: "assets/player_left.png",     // ← 발차기
   player_down: "assets/player_down.png",     // ↓ 웅크리기
-  player_up: "assets/player_up.png",         // ↑ 점프
-  player_right: "assets/player_right.png",   // → 만세
+  player_up: "assets/player_up.png",         // ↑ 만세
+  player_right: "assets/player_right.png",   // → 점프
   player_space: "assets/player_space.png",   // Space 팔 벌리기
   bot: "assets/bot.png",
   bot_left: "assets/bot_left.png",     // ← 발차기
   bot_down: "assets/bot_down.png",     // ↓ 웅크리기
-  bot_up: "assets/bot_up.png",         // ↑ 점프
-  bot_right: "assets/bot_right.png",   // → 만세
+  bot_up: "assets/bot_up.png",         // ↑ 만세
+  bot_right: "assets/bot_right.png",   // → 점프
   bot_space: "assets/bot_space.png",   // Space 팔 벌리기
   dj: "assets/dj.png",
   crowd1: "assets/crowd1.png",
@@ -196,14 +197,17 @@ function draw() {
 
   // 6. 노트: 레인 위에 내려오는 중인 화살표 키 그림
   for (const note of notes) {
+    if (note.y < LANE_TOP) continue;   // 아직 레인 위쪽 밖에서 기다리는 노트는 그리지 않는다
     const x = LANE_X + note.lane * LANE_WIDTH + (LANE_WIDTH - NOTE_SIZE) / 2;
     ctx.drawImage(images["note_" + LANE_NAMES[note.lane]], x, note.y, NOTE_SIZE, NOTE_SIZE);
   }
 
   // 7. Space 노트: 레인 4개를 가로지르는 긴 막대 + 가운데에 Space 키 그림
+  if (spaceNoteY >= LANE_TOP) {       // 레인 안에 들어왔을 때만 그린다
   ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
   ctx.fillRect(LANE_X + 5, spaceNoteY + 14, LANE_WIDTH * LANE_COUNT - 10, 12);
   ctx.drawImage(images.note_space, DJ_X - 20, spaceNoteY, 40, 40);
+  }
 
   // 8. 댄서: 나(왼쪽)와 봇(오른쪽). 그림의 가운데 아래가 발끝 위치에 오게 그린다
   const dancerTop = DANCER_FEET_Y - DANCER_HEIGHT;
@@ -228,9 +232,20 @@ function draw() {
 // ===== 게임 루프: 지우기 → 계산 → 그리기를 1초에 약 60번 반복한다 =====
 // ===== 키 입력 =====
 
-// 노트를 레인 맨 위로 돌려보내고, 레인(방향)을 무작위로 새로 고른다
+// 다시 나타날 노트의 y: 지금 가장 위에 있는 노트보다 NOTE_GAP만큼 더 위 (레인 맨 위보다 아래로는 안 간다)
+// 이렇게 하면 노트가 줄을 서서 내려오므로 서로 겹치지 않는다
+function nextSpawnY(except) {
+  let topY = Infinity;
+  for (const note of notes) {
+    if (note !== except && note.y < topY) topY = note.y;
+  }
+  if (except !== "space" && spaceNoteY < topY) topY = spaceNoteY;
+  return Math.min(NOTE_START_Y, topY - NOTE_GAP);
+}
+
+// 노트를 줄 맨 뒤(위쪽)로 돌려보내고, 레인(방향)을 무작위로 새로 고른다
 function respawnNote(note) {
-  note.y = NOTE_START_Y;
+  note.y = nextSpawnY(note);
   // Math.random()은 0 이상 1 미만의 아무 수 → 4를 곱하고 소수점을 버리면 0, 1, 2, 3 중 하나
   note.lane = Math.floor(Math.random() * LANE_COUNT);
 }
@@ -241,7 +256,7 @@ function pressKey(key) {
     playerPose = "player_space";
     // Space 노트의 가운데(그림 높이 40의 절반 = 20)가 판정선 근처에 있으면 맞춘 것
     if (Math.abs(spaceNoteY + 20 - JUDGE_Y) <= JUDGE_RANGE) {
-      spaceNoteY = NOTE_START_Y;
+      spaceNoteY = nextSpawnY("space");
     }
     return;
   }
@@ -305,7 +320,7 @@ function gameLoop() {
   spaceNoteY = spaceNoteY + noteSpeed;
   if (spaceNoteY + 40 > NOTE_END_Y) {          // Space 노트 그림 높이는 40
     botPose = "bot_space";                       // Space 노트가 지나가면 팔 벌리기 포즈
-    spaceNoteY = NOTE_START_Y;
+    spaceNoteY = nextSpawnY("space");
   }
 
   // ③ 그리기: 바뀐 위치대로 무대 전체를 다시 그린다

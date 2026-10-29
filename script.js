@@ -15,12 +15,20 @@ const JUDGE_Y = 500;
 
 // 노트: lane = 몇 번째 레인(0~3), y = 지금 세로 위치
 // y는 매 프레임 바뀌는 "상태"라서 let으로 만든다
-let notes = [
-  { lane: 1, y: 150 },
-  { lane: 0, y: 240 },
-  { lane: 2, y: 330 },
-  { lane: 3, y: 420 },
-];
+// 스테이지별 노트 간격 (노트 사이의 세로 거리, px): 초급 120 / 중급 90 / 상급 70
+// 간격이 넓을수록 노트가 드문드문 나온다
+const STAGE_GAPS = [120, 90, 70];
+let noteGap = STAGE_GAPS[0];   // 지금은 스테이지 1(초급)
+const NOTE_COUNT = 10;     // 화살표 노트 개수. 레인을 다 채우고도 위에서 기다리는 노트가 남을 만큼 넉넉하게
+                           // (모자라면 줄 맨 뒤가 비어서 동시 노트가 만들어지지 않는다. 기준: 380 ÷ 가장 좁은 간격(70) + 4)
+
+let notes = [];
+let lineY = 420;           // 줄을 세울 다음 위치. 판정선 근처(420)부터 위쪽으로 올라가며 세운다
+for (let i = 0; i < NOTE_COUNT; i++) {
+  // 레인 위(150)보다 위에 있는 노트는 아직 안 보이고, 줄을 서서 기다린다
+  notes.push({ lane: Math.floor(Math.random() * 4), y: lineY });
+  lineY = lineY - noteGap;
+}
 // ===== 입력과 판정 (5장) =====
 const INPUT_MODE = "B";    // 조작 방식. "A" = 키 이벤트 안에서 바로 판정 (비교 실험용), "B" = keys에 기록하고 게임 루프에서 판정
 const JUDGE_RANGE = 30;    // 노트 가운데가 판정선에서 이 거리(px) 안에 있을 때 키를 누르면 맞춘 것
@@ -32,8 +40,8 @@ let playerPose = "player"; // 지금 내 캐릭터가 하고 있는 포즈 (그�
 
 let botPose = "bot";      // 지금 봇이 하고 있는 포즈 (그림 이름). 노트가 지나갈 때마다 바뀐다
 let frameCount = 0;        // 게임이 시작된 뒤 지난 프레임 수 (반짝이 깜빡임에 쓴다)
-let spaceNoteY = 60;       // Space 노트(레인 4개를 가로지르는 긴 막대)의 y. 레인 위(150)보다 위에 있으면 아직 안 보인다
-const NOTE_GAP = 90;       // 노트끼리의 최소 세로 간격 (노트가 겹치지 않게)
+let spaceNoteY = lineY;    // Space 노트(레인 4개를 가로지르는 긴 막대)의 y. 줄 맨 뒤에서 시작한다
+const CHORD_CHANCE = 0.2;  // 동시 노트(두 키를 같이 눌러야 하는 노트)가 나올 확률 (0.2 = 20%)
 // 스테이지별 노트 속도 (속도 튜닝으로 정함): 초급 2 / 중급 4 / 상급 6
 const STAGE_SPEEDS = [2, 4, 6];
 let noteSpeed = STAGE_SPEEDS[0];   // 지금은 스테이지 1(초급). 노트가 한 프레임에 아래로 내려오는 거리
@@ -232,7 +240,7 @@ function draw() {
 // ===== 게임 루프: 지우기 → 계산 → 그리기를 1초에 약 60번 반복한다 =====
 // ===== 키 입력 =====
 
-// 다시 나타날 노트의 y: 지금 가장 위에 있는 노트보다 NOTE_GAP만큼 더 위 (레인 맨 위보다 아래로는 안 간다)
+// 다시 나타날 노트의 y: 지금 가장 위에 있는 노트보다 noteGap만큼 더 위 (레인 맨 위보다 아래로는 안 간다)
 // 이렇게 하면 노트가 줄을 서서 내려오므로 서로 겹치지 않는다
 function nextSpawnY(except) {
   let topY = Infinity;
@@ -240,14 +248,32 @@ function nextSpawnY(except) {
     if (note !== except && note.y < topY) topY = note.y;
   }
   if (except !== "space" && spaceNoteY < topY) topY = spaceNoteY;
-  return Math.min(NOTE_START_Y, topY - NOTE_GAP);
+  return Math.min(NOTE_START_Y, topY - noteGap);
 }
 
 // 노트를 줄 맨 뒤(위쪽)로 돌려보내고, 레인(방향)을 무작위로 새로 고른다
 function respawnNote(note) {
+  // 동시 노트: 줄 맨 뒤 노트가 아직 레인 위에서 기다리는 중이고 혼자라면,
+  // CHORD_CHANCE 확률로 그 노트와 같은 높이 · 다른 레인에 놓는다 → 두 키를 같이 눌러야 한다
+  const last = lastNote(note);
+  if (last && last.y <= NOTE_START_Y && Math.random() < CHORD_CHANCE) {
+    note.y = last.y;
+    // 1~3칸 옆 레인을 고른다 (4로 나눈 나머지를 써서 0~3 안에서 돈다) → 절대 같은 레인이 안 된다
+    note.lane = (last.lane + 1 + Math.floor(Math.random() * (LANE_COUNT - 1))) % LANE_COUNT;
+    return;
+  }
   note.y = nextSpawnY(note);
   // Math.random()은 0 이상 1 미만의 아무 수 → 4를 곱하고 소수점을 버리면 0, 1, 2, 3 중 하나
   note.lane = Math.floor(Math.random() * LANE_COUNT);
+}
+
+// 줄 맨 뒤(가장 위)에 있는 화살표 노트. 단, Space 노트가 더 위에 있거나, 이미 동시 노트(2개)이면 없음(null)
+function lastNote(except) {
+  const others = notes.filter((n) => n !== except);
+  const topY = Math.min(...others.map((n) => n.y));
+  if (spaceNoteY <= topY) return null;
+  const atTop = others.filter((n) => n.y === topY);
+  return atTop.length === 1 ? atTop[0] : null;
 }
 
 // 게임 키 하나를 눌렀을 때 할 일: 그 방향 포즈를 취하고, 판정선 근처의 노트를 맞췄는지 확인한다
@@ -309,15 +335,19 @@ function gameLoop() {
     if (!anyKeyHeld) playerPose = "player";       // 모든 키에서 손을 떼면 기본 포즈로 돌아온다
   }
 
+  // 먼저 모든 노트를 똑같이 내린 다음, 빠져나간 노트를 처리한다
+  // (내리면서 바로 처리하면 아직 안 내린 노트와 높이가 어긋나 간격이 틀어진다)
   for (const note of notes) {
     note.y = note.y + noteSpeed;
-    // 레인 맨 아래로 빠져나가면 레인 맨 위에서 다시 나타난다
+  }
+  spaceNoteY = spaceNoteY + noteSpeed;
+  for (const note of notes) {
+    // 레인 맨 아래로 빠져나가면 줄 맨 뒤로 돌아간다
     if (note.y + NOTE_SIZE > NOTE_END_Y) {
       botPose = "bot_" + LANE_NAMES[note.lane];   // 봇이 방금 지나간 노트 방향의 포즈를 취한다
       respawnNote(note);
     }
   }
-  spaceNoteY = spaceNoteY + noteSpeed;
   if (spaceNoteY + 40 > NOTE_END_Y) {          // Space 노트 그림 높이는 40
     botPose = "bot_space";                       // Space 노트가 지나가면 팔 벌리기 포즈
     spaceNoteY = nextSpawnY("space");

@@ -21,6 +21,15 @@ let notes = [
   { lane: 2, y: 300 },
   { lane: 3, y: 380 },
 ];
+// ===== 입력과 판정 (5장) =====
+const INPUT_MODE = "B";    // 조작 방식. "A" = 키 이벤트 안에서 바로 판정 (비교 실험용), "B" = keys에 기록하고 게임 루프에서 판정
+const JUDGE_RANGE = 30;    // 노트 가운데가 판정선에서 이 거리(px) 안에 있을 때 키를 누르면 맞춘 것
+const KEY_TO_LANE = { ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3 }; // 방향키 → 레인 번호
+const GAME_KEYS = ["ArrowLeft", "ArrowDown", "ArrowUp", "ArrowRight", " "];   // 게임에 쓰는 키 (" "는 스페이스바)
+const keys = {};           // 지금 눌려 있는 키를 적어 두는 메모장 (true = 눌림, false = 안 눌림)
+const prevKeys = {};       // 지난 프레임에 눌려 있던 키 (이번 프레임에 "새로" 눌렸는지 알아내는 데 쓴다)
+let playerPose = "player"; // 지금 내 캐릭터가 하고 있는 포즈 (그림 이름)
+
 let botPose = "bot";      // 지금 봇이 하고 있는 포즈 (그림 이름). 노트가 지나갈 때마다 바뀐다
 let frameCount = 0;        // 게임이 시작된 뒤 지난 프레임 수 (반짝이 깜빡임에 쓴다)
 let spaceNoteY = 430;      // Space 노트(레인 4개를 가로지르는 긴 막대)의 y
@@ -57,6 +66,11 @@ const STAGE_COLOR = "#2a1b3d";   // 무대 배경 (어두운 보라)
 // 무료 에셋: Kenney (www.kenney.nl), CC0 라이선스. 출처는 README.md에 적어 두었다.
 const IMAGE_FILES = {
   player: "assets/player.png",
+  player_left: "assets/player_left.png",     // ← 발차기
+  player_down: "assets/player_down.png",     // ↓ 웅크리기
+  player_up: "assets/player_up.png",         // ↑ 점프
+  player_right: "assets/player_right.png",   // → 만세
+  player_space: "assets/player_space.png",   // Space 팔 벌리기
   bot: "assets/bot.png",
   bot_left: "assets/bot_left.png",     // ← 발차기
   bot_down: "assets/bot_down.png",     // ↓ 웅크리기
@@ -193,7 +207,7 @@ function draw() {
 
   // 8. 댄서: 나(왼쪽)와 봇(오른쪽). 그림의 가운데 아래가 발끝 위치에 오게 그린다
   const dancerTop = DANCER_FEET_Y - DANCER_HEIGHT;
-  ctx.drawImage(images.player, PLAYER_X - DANCER_WIDTH / 2, dancerTop, DANCER_WIDTH, DANCER_HEIGHT);
+  ctx.drawImage(images[playerPose], PLAYER_X - DANCER_WIDTH / 2, dancerTop, DANCER_WIDTH, DANCER_HEIGHT);
   ctx.drawImage(images[botPose], BOT_X - DANCER_WIDTH / 2, dancerTop, DANCER_WIDTH, DANCER_HEIGHT);
   ctx.fillStyle = "white";
   ctx.font = "16px sans-serif";
@@ -212,21 +226,80 @@ function draw() {
 }
 
 // ===== 게임 루프: 지우기 → 계산 → 그리기를 1초에 약 60번 반복한다 =====
+// ===== 키 입력 =====
+
+// 노트를 레인 맨 위로 돌려보내고, 레인(방향)을 무작위로 새로 고른다
+function respawnNote(note) {
+  note.y = NOTE_START_Y;
+  // Math.random()은 0 이상 1 미만의 아무 수 → 4를 곱하고 소수점을 버리면 0, 1, 2, 3 중 하나
+  note.lane = Math.floor(Math.random() * LANE_COUNT);
+}
+
+// 게임 키 하나를 눌렀을 때 할 일: 그 방향 포즈를 취하고, 판정선 근처의 노트를 맞췄는지 확인한다
+function pressKey(key) {
+  if (key === " ") {
+    playerPose = "player_space";
+    // Space 노트의 가운데(그림 높이 40의 절반 = 20)가 판정선 근처에 있으면 맞춘 것
+    if (Math.abs(spaceNoteY + 20 - JUDGE_Y) <= JUDGE_RANGE) {
+      spaceNoteY = NOTE_START_Y;
+    }
+    return;
+  }
+  const lane = KEY_TO_LANE[key];
+  playerPose = "player_" + LANE_NAMES[lane];
+  for (const note of notes) {
+    const noteCenter = note.y + NOTE_SIZE / 2;     // 노트 그림의 세로 가운데
+    // 같은 방향이고, 가운데가 판정선에서 JUDGE_RANGE 안에 있으면 맞춘 것 → 노트를 위로 돌려보낸다
+    if (note.lane === lane && Math.abs(noteCenter - JUDGE_Y) <= JUDGE_RANGE) {
+      respawnNote(note);
+      return;                                      // 한 번 누르면 노트 하나만 맞춘다
+    }
+  }
+}
+
+// 키를 누르는 순간 (keydown)
+document.addEventListener("keydown", function (e) {
+  console.log(e.key);                    // 5장 Step 1 확인용: 눌린 키 이름을 콘솔(F12)에 출력. 확인이 끝나면 이 줄을 지운다
+  if (!GAME_KEYS.includes(e.key)) return; // 게임에 안 쓰는 키는 무시
+  e.preventDefault();                    // 방향키·스페이스바로 페이지가 스크롤되지 않게 막는다
+  if (INPUT_MODE === "A") {
+    pressKey(e.key);                     // 방식 A: 이벤트 안에서 바로 판정하고 포즈를 바꾼다
+  }
+  keys[e.key] = true;                    // 방식 B: "눌렸다"고 기록만 한다. 판정은 게임 루프가 한다
+});
+
+// 키에서 손을 떼는 순간 (keyup)
+document.addEventListener("keyup", function (e) {
+  keys[e.key] = false;                   // "떼었다"고 기록한다
+});
+
 function gameLoop() {
   // ① 지우기: 이전 프레임에 그린 것을 모두 지운다
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // ② 계산: 프레임 수를 세고, 노트를 속도만큼 아래로 내린다
+  // ② 계산: 프레임 수를 세고, 키 입력을 판정하고, 노트를 속도만큼 아래로 내린다
   frameCount = frameCount + 1;
+
+  // 방식 B: keys 메모장을 보고 판정한다
+  if (INPUT_MODE === "B") {
+    let anyKeyHeld = false;
+    for (const key of GAME_KEYS) {
+      // 지금은 눌려 있는데 지난 프레임에는 안 눌려 있었다 = 방금 새로 누른 키 → 한 번만 판정 (꾹 눌러도 연속 판정 안 됨)
+      if (keys[key] && !prevKeys[key]) {
+        pressKey(key);
+      }
+      if (keys[key]) anyKeyHeld = true;
+      prevKeys[key] = keys[key];
+    }
+    if (!anyKeyHeld) playerPose = "player";       // 모든 키에서 손을 떼면 기본 포즈로 돌아온다
+  }
+
   for (const note of notes) {
     note.y = note.y + noteSpeed;
     // 레인 맨 아래로 빠져나가면 레인 맨 위에서 다시 나타난다
     if (note.y + NOTE_SIZE > NOTE_END_Y) {
       botPose = "bot_" + LANE_NAMES[note.lane];   // 봇이 방금 지나간 노트 방향의 포즈를 취한다
-      note.y = NOTE_START_Y;
-      // 다시 나타날 때 레인을 무작위로 고른다 (0~3 중 하나: ← ↓ ↑ →)
-      // Math.random()은 0 이상 1 미만의 아무 수 → 4를 곱하고 소수점을 버리면 0, 1, 2, 3 중 하나
-      note.lane = Math.floor(Math.random() * LANE_COUNT);
+      respawnNote(note);
     }
   }
   spaceNoteY = spaceNoteY + noteSpeed;

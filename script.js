@@ -19,8 +19,8 @@ const JUDGE_Y = 500;
 // 간격이 넓을수록 노트가 드문드문 나온다
 const STAGE_GAPS = [120, 90, 70];
 let noteGap = STAGE_GAPS[0];   // 지금은 스테이지 1(초급)
-const NOTE_COUNT = 10;     // 화살표 노트 개수. 레인을 다 채우고도 위에서 기다리는 노트가 남을 만큼 넉넉하게
-                           // (모자라면 줄 맨 뒤가 비어서 동시 노트가 만들어지지 않는다. 기준: 380 ÷ 가장 좁은 간격(70) + 4)
+const NOTE_COUNT = 11;     // 화살표 노트 개수. 레인을 다 채우고도 위에서 기다리는 노트가 남을 만큼 넉넉하게
+                           // (모자라면 줄 맨 뒤가 비어서 동시 노트가 만들어지지 않는다. 기준: 노트가 지나가는 거리 430 ÷ 가장 좁은 간격(70) + 4)
 
 let notes = [];
 let lineY = 420;           // 줄을 세울 다음 위치. 판정선 근처(420)부터 위쪽으로 올라가며 세운다
@@ -40,10 +40,16 @@ let playerPose = "player"; // 지금 내 캐릭터가 하고 있는 포즈 (그�
 
 // 판정 등급: 정확도 = 판정선에 얼마나 가깝게 눌렀는가 (판정선 한가운데 100%, 판정 범위 끝 0%)
 const PERFECT_ACCURACY = 0.90;  // 90% 이상 → PERFECT
-const GREAT_ACCURACY = 0.70;    // 70% 이상 ~ 90% 미만 → GREAT, 그 아래 → GOOD
+const GREAT_ACCURACY = 0.70;    // 70% 이상 ~ 90% 미만 → GREAT
+const MISS_ACCURACY = 0.30;     // 30% 초과 ~ 70% 미만 → GOOD, 30% 이하 → MISS (너무 일찍/늦게 눌렀다)
 const JUDGE_SHOW_FRAMES = 40;   // 판정 글자를 화면에 띄워 두는 시간 (프레임 수, 60 = 약 1초)
-let judgeText = "";        // 지금 띄울 판정 글자 ("PERFECT" / "GREAT" / "GOOD")
+let judgeText = "";        // 지금 띄울 판정 글자 ("PERFECT" / "GREAT" / "GOOD" / "MISS")
 let judgeTimer = 0;        // 판정 글자가 사라지기까지 남은 프레임 수
+const JUDGE_COLORS = { PERFECT: "#ffd166", GREAT: "#8fd3ff", GOOD: "#b8f2a0", MISS: "#ff6b6b" }; // 판정별 색 (글자와 이펙트에 같이 쓴다)
+
+// 입력 이펙트
+const HIT_EFFECT_FRAMES = 20;  // 맞췄을 때 터지는 이펙트가 보이는 시간 (프레임 수)
+let hitEffects = [];       // 지금 화면에 보이는 이펙트 목록. 하나 = { x, y, color, wide, timer }
 
 let botPose = "bot";      // 지금 봇이 하고 있는 포즈 (그림 이름). 노트가 지나갈 때마다 바뀐다
 let frameCount = 0;        // 게임이 시작된 뒤 지난 프레임 수 (반짝이 깜빡임에 쓴다)
@@ -54,7 +60,7 @@ const STAGE_SPEEDS = [2, 4, 6];
 let noteSpeed = STAGE_SPEEDS[0];   // 지금은 스테이지 1(초급). 노트가 한 프레임에 아래로 내려오는 거리
 const NOTE_SIZE = 50;      // 노트 그림 크기 (가로 = 세로)
 const NOTE_START_Y = LANE_TOP;                // 노트가 다시 나타나는 y (레인 맨 위)
-const NOTE_END_Y = LANE_TOP + LANE_HEIGHT;    // 노트가 사라지는 y (레인 맨 아래)
+const NOTE_END_Y = LANE_TOP + LANE_HEIGHT;    // 노트가 사라지는 y (레인 맨 아래). 노트 윗부분까지 이 선을 넘으면 줄 맨 뒤로 돌아간다
 
 // 캐릭터: (x, y)는 그림의 가운데 아래(발끝) 위치
 const PLAYER_X = 140;
@@ -206,27 +212,66 @@ function draw() {
   ctx.lineTo(LANE_X + LANE_WIDTH * LANE_COUNT, JUDGE_Y); // 선 끝점
   ctx.stroke();
   for (let i = 0; i < LANE_COUNT; i++) {
-    const x = LANE_X + i * LANE_WIDTH + (LANE_WIDTH - NOTE_SIZE) / 2; // 레인 가운데
-    ctx.drawImage(images["target_" + LANE_NAMES[i]], x, JUDGE_Y - NOTE_SIZE / 2, NOTE_SIZE, NOTE_SIZE);
+    const laneLeft = LANE_X + i * LANE_WIDTH;
+    // 이펙트 1: 키를 누르고 있는 레인은 판정선 위쪽이 빛난다 → 입력이 들어갔는지 바로 보인다
+    if (keys[GAME_KEYS[i]]) {
+      const glow = ctx.createLinearGradient(0, JUDGE_Y - 120, 0, JUDGE_Y + 30);
+      glow.addColorStop(0, "rgba(255, 255, 255, 0)");
+      glow.addColorStop(1, "rgba(255, 255, 255, 0.45)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(laneLeft, JUDGE_Y - 120, LANE_WIDTH, 150);
+    }
+    const x = laneLeft + (LANE_WIDTH - NOTE_SIZE) / 2; // 레인 가운데
+    // 누르고 있는 레인의 과녁은 조금 작아져서 "눌린" 느낌을 준다
+    const size = keys[GAME_KEYS[i]] ? NOTE_SIZE - 8 : NOTE_SIZE;
+    ctx.drawImage(images["target_" + LANE_NAMES[i]], x + (NOTE_SIZE - size) / 2, JUDGE_Y - size / 2, size, size);
+  }
+  // 스페이스바를 누르고 있으면 판정선이 굵게 빛난다
+  if (keys[" "]) {
+    ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+    ctx.fillRect(LANE_X, JUDGE_Y - 6, LANE_WIDTH * LANE_COUNT, 12);
   }
 
   // 6. 노트: 레인 위에 내려오는 중인 화살표 키 그림
+  // clip: 지금부터 그리는 것은 레인 사각형 안쪽만 보이게 한다 (레인 밖으로 나간 부분은 잘려서 안 보인다)
+  // 그래서 노트가 레인 위에서 스르륵 들어오고, 레인 아래로 스르륵 사라진다
+  ctx.save();                                            // clip을 걸기 전 상태를 저장해 둔다
+  ctx.beginPath();
+  ctx.rect(LANE_X, LANE_TOP, LANE_WIDTH * LANE_COUNT, LANE_HEIGHT);
+  ctx.clip();
   for (const note of notes) {
-    if (note.y < LANE_TOP) continue;   // 아직 레인 위쪽 밖에서 기다리는 노트는 그리지 않는다
     const x = LANE_X + note.lane * LANE_WIDTH + (LANE_WIDTH - NOTE_SIZE) / 2;
     ctx.drawImage(images["note_" + LANE_NAMES[note.lane]], x, note.y, NOTE_SIZE, NOTE_SIZE);
   }
 
   // 7. Space 노트: 레인 4개를 가로지르는 긴 막대 + 가운데에 Space 키 그림
-  if (spaceNoteY >= LANE_TOP) {       // 레인 안에 들어왔을 때만 그린다
   ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
   ctx.fillRect(LANE_X + 5, spaceNoteY + 14, LANE_WIDTH * LANE_COUNT - 10, 12);
   ctx.drawImage(images.note_space, DJ_X - 20, spaceNoteY, 40, 40);
+  ctx.restore();                                         // clip을 풀고 원래 상태로 돌아간다
+
+  // 7-0. 이펙트 2: 맞춘 자리에서 판정 색깔의 별과 고리가 퍼지며 사라진다
+  for (const effect of hitEffects) {
+    const progress = 1 - effect.timer / HIT_EFFECT_FRAMES;   // 0(막 터짐) → 1(끝)
+    ctx.globalAlpha = 1 - progress;                          // 점점 투명해진다
+    const radius = 20 + progress * 35;                       // 점점 커진다
+    ctx.strokeStyle = effect.color;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    if (effect.wide) {
+      // Space 노트는 레인 전체 폭의 납작한 고리
+      ctx.ellipse(effect.x, effect.y, (LANE_WIDTH * LANE_COUNT) / 2 + progress * 20, radius / 2, 0, 0, Math.PI * 2);
+    } else {
+      ctx.arc(effect.x, effect.y, radius, 0, Math.PI * 2);
+    }
+    ctx.stroke();
+    const starSize = radius * 2;
+    ctx.drawImage(images.sparkle, effect.x - starSize / 2, effect.y - starSize / 2, starSize, starSize);
   }
+  ctx.globalAlpha = 1;
 
   // 7-1. 판정 글자: 레인 위쪽에 크게 띄우고, 시간이 지날수록 흐려진다
   if (judgeTimer > 0) {
-    const JUDGE_COLORS = { PERFECT: "#ffd166", GREAT: "#8fd3ff", GOOD: "#b8f2a0" };
     ctx.globalAlpha = judgeTimer / JUDGE_SHOW_FRAMES;  // 남은 시간에 비례해서 투명해진다 (1 → 0)
     ctx.fillStyle = JUDGE_COLORS[judgeText];
     ctx.font = "bold 40px sans-serif";
@@ -296,16 +341,21 @@ function lastNote(except) {
 
 // 게임 키 하나를 눌렀을 때 할 일: 그 방향 포즈를 취하고, 판정선 근처의 노트를 맞췄는지 확인한다
 // 노트를 맞췄을 때: 판정선과의 거리로 정확도를 계산해 판정 등급을 정하고, 화면에 띄울 준비를 한다
-function showJudge(distance) {
-  const accuracy = 1 - distance / JUDGE_RANGE;   // 거리 0이면 1(100%), 판정 범위 끝이면 0(0%)
+function showJudge(distance, effectX, wide) {
+  // 거리 0이면 1(100%), 판정 범위 끝이면 0(0%). 소수 계산 오차(0.30000000000000004 같은)를 없애려고 소수 둘째 자리에서 반올림한다
+  const accuracy = Math.round((1 - distance / JUDGE_RANGE) * 100) / 100;
   if (accuracy >= PERFECT_ACCURACY) {
     judgeText = "PERFECT";
   } else if (accuracy >= GREAT_ACCURACY) {
     judgeText = "GREAT";
-  } else {
+  } else if (accuracy > MISS_ACCURACY) {
     judgeText = "GOOD";
+  } else {
+    judgeText = "MISS";
   }
   judgeTimer = JUDGE_SHOW_FRAMES;                 // 지금부터 JUDGE_SHOW_FRAMES 동안 보여 준다
+  // 맞춘 자리에 이펙트를 하나 추가한다
+  hitEffects.push({ x: effectX, y: JUDGE_Y, color: JUDGE_COLORS[judgeText], wide: wide, timer: HIT_EFFECT_FRAMES });
 }
 
 function pressKey(key) {
@@ -314,7 +364,7 @@ function pressKey(key) {
     // Space 노트의 가운데(그림 높이 40의 절반 = 20)가 판정선 근처에 있으면 맞춘 것
     const distance = Math.abs(spaceNoteY + 20 - JUDGE_Y);
     if (distance <= JUDGE_RANGE) {
-      showJudge(distance);
+      showJudge(distance, LANE_X + (LANE_WIDTH * LANE_COUNT) / 2, true);
       spaceNoteY = nextSpawnY("space");
     }
     return;
@@ -326,7 +376,7 @@ function pressKey(key) {
     // 같은 방향이고, 가운데가 판정선에서 JUDGE_RANGE 안에 있으면 맞춘 것 → 노트를 위로 돌려보낸다
     const distance = Math.abs(noteCenter - JUDGE_Y);  // 판정선에서 몇 px 떨어져 있는가
     if (note.lane === lane && distance <= JUDGE_RANGE) {
-      showJudge(distance);
+      showJudge(distance, LANE_X + lane * LANE_WIDTH + LANE_WIDTH / 2, false);
       respawnNote(note);
       return;                                      // 한 번 누르면 노트 하나만 맞춘다
     }
@@ -356,6 +406,8 @@ function gameLoop() {
   // ② 계산: 프레임 수를 세고, 키 입력을 판정하고, 노트를 속도만큼 아래로 내린다
   frameCount = frameCount + 1;
   if (judgeTimer > 0) judgeTimer = judgeTimer - 1;   // 판정 글자가 사라질 때까지 남은 시간을 줄인다
+  for (const effect of hitEffects) effect.timer = effect.timer - 1;   // 이펙트 남은 시간을 줄이고
+  hitEffects = hitEffects.filter((effect) => effect.timer > 0);      // 다 끝난 이펙트는 목록에서 뺀다
 
   // 방식 B: keys 메모장을 보고 판정한다
   if (INPUT_MODE === "B") {
@@ -374,18 +426,25 @@ function gameLoop() {
   // 먼저 모든 노트를 똑같이 내린 다음, 빠져나간 노트를 처리한다
   // (내리면서 바로 처리하면 아직 안 내린 노트와 높이가 어긋나 간격이 틀어진다)
   for (const note of notes) {
+    const before = note.y + NOTE_SIZE / 2;         // 내리기 전 노트 가운데
     note.y = note.y + noteSpeed;
+    // 노트 가운데가 이번 프레임에 판정선을 지나갔으면, 봇이 그 방향 포즈를 취한다 (봇이 노트를 친 것처럼)
+    if (before < JUDGE_Y && note.y + NOTE_SIZE / 2 >= JUDGE_Y) {
+      botPose = "bot_" + LANE_NAMES[note.lane];
+    }
   }
+  const spaceBefore = spaceNoteY + 20;
   spaceNoteY = spaceNoteY + noteSpeed;
+  if (spaceBefore < JUDGE_Y && spaceNoteY + 20 >= JUDGE_Y) {
+    botPose = "bot_space";                         // Space 노트가 판정선을 지나가면 팔 벌리기 포즈
+  }
   for (const note of notes) {
     // 레인 맨 아래로 빠져나가면 줄 맨 뒤로 돌아간다
-    if (note.y + NOTE_SIZE > NOTE_END_Y) {
-      botPose = "bot_" + LANE_NAMES[note.lane];   // 봇이 방금 지나간 노트 방향의 포즈를 취한다
+    if (note.y > NOTE_END_Y) {                   // 노트 윗부분까지 레인 밖으로 다 나가면
       respawnNote(note);
     }
   }
-  if (spaceNoteY + 40 > NOTE_END_Y) {          // Space 노트 그림 높이는 40
-    botPose = "bot_space";                       // Space 노트가 지나가면 팔 벌리기 포즈
+  if (spaceNoteY > NOTE_END_Y) {               // Space 노트도 레인 밖으로 다 나가면
     spaceNoteY = nextSpawnY("space");
   }
 

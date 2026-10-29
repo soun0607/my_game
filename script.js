@@ -31,7 +31,7 @@ for (let i = 0; i < NOTE_COUNT; i++) {
 }
 // ===== 입력과 판정 (5장) =====
 const INPUT_MODE = "B";    // 조작 방식. "A" = 키 이벤트 안에서 바로 판정 (비교 실험용), "B" = keys에 기록하고 게임 루프에서 판정
-const JUDGE_RANGE = 30;    // 노트 가운데가 판정선에서 이 거리(px) 안에 있을 때 키를 누르면 맞춘 것
+const JUDGE_RANGE = 50;    // 노트 가운데가 판정선에서 이 거리(px) 안에 있을 때 키를 누르면 맞춘 것
 const KEY_TO_LANE = { ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3 }; // 방향키 → 레인 번호
 const GAME_KEYS = ["ArrowLeft", "ArrowDown", "ArrowUp", "ArrowRight", " "];   // 게임에 쓰는 키 (" "는 스페이스바)
 const keys = {};           // 지금 눌려 있는 키를 적어 두는 메모장 (true = 눌림, false = 안 눌림)
@@ -59,6 +59,7 @@ const CHORD_CHANCE = 0.2;  // 동시 노트(두 키를 같이 눌러야 하는 �
 const STAGE_SPEEDS = [2, 4, 6];
 let noteSpeed = STAGE_SPEEDS[0];   // 지금은 스테이지 1(초급). 노트가 한 프레임에 아래로 내려오는 거리
 const NOTE_SIZE = 50;      // 노트 그림 크기 (가로 = 세로)
+const TARGET_SIZE = Math.round(NOTE_SIZE * 1.2);  // 판정선 위 과녁(판정 박스) 그림 크기: 노트의 1.2배 = 60 (레인 폭과 같다)
 const NOTE_START_Y = LANE_TOP;                // 노트가 다시 나타나는 y (레인 맨 위)
 const NOTE_END_Y = LANE_TOP + LANE_HEIGHT;    // 노트가 사라지는 y (레인 맨 아래). 노트 윗부분까지 이 선을 넘으면 줄 맨 뒤로 돌아간다
 
@@ -217,10 +218,10 @@ function draw() {
       ctx.fillStyle = glow;
       ctx.fillRect(laneLeft, JUDGE_Y - 120, LANE_WIDTH, 150);
     }
-    const x = laneLeft + (LANE_WIDTH - NOTE_SIZE) / 2; // 레인 가운데
+    const laneCenter = laneLeft + LANE_WIDTH / 2;      // 레인 가운데 x
     // 누르고 있는 레인의 과녁은 조금 작아져서 "눌린" 느낌을 준다
-    const size = keys[GAME_KEYS[i]] ? NOTE_SIZE - 8 : NOTE_SIZE;
-    ctx.drawImage(images["target_" + LANE_NAMES[i]], x + (NOTE_SIZE - size) / 2, JUDGE_Y - size / 2, size, size);
+    const size = keys[GAME_KEYS[i]] ? TARGET_SIZE - 8 : TARGET_SIZE;
+    ctx.drawImage(images["target_" + LANE_NAMES[i]], laneCenter - size / 2, JUDGE_Y - size / 2, size, size); // 가운데가 레인 가운데 · 판정선에 오게
   }
   // 스페이스바를 누르고 있으면 판정선이 굵게 빛난다
   if (keys[" "]) {
@@ -367,21 +368,28 @@ function pressKey(key) {
   }
   const lane = KEY_TO_LANE[key];
   playerPose = "player_" + LANE_NAMES[lane];
+  // 같은 방향 노트 중에서 판정선에 가장 가까운 노트를 찾는다
+  // (판정 범위가 넓으면 같은 레인의 노트 두 개가 동시에 범위 안에 들 수 있어서, 가까운 쪽을 맞춰야 판정이 정확하다)
+  let closest = null;
+  let closestDistance = Infinity;
   for (const note of notes) {
     const noteCenter = note.y + NOTE_SIZE / 2;     // 노트 그림의 세로 가운데
-    // 같은 방향이고, 가운데가 판정선에서 JUDGE_RANGE 안에 있으면 맞춘 것 → 노트를 위로 돌려보낸다
     const distance = Math.abs(noteCenter - JUDGE_Y);  // 판정선에서 몇 px 떨어져 있는가
-    if (note.lane === lane && distance <= JUDGE_RANGE) {
-      showJudge(distance, LANE_X + lane * LANE_WIDTH + LANE_WIDTH / 2, false);
-      respawnNote(note);
-      return;                                      // 한 번 누르면 노트 하나만 맞춘다
+    if (note.lane === lane && distance < closestDistance) {
+      closest = note;
+      closestDistance = distance;
     }
+  }
+  // 가장 가까운 노트가 판정 범위 안에 있으면 맞춘 것 → 판정을 띄우고 노트를 줄 맨 뒤로 돌려보낸다
+  // 한 번 누르면 노트 하나만 맞춘다
+  if (closest && closestDistance <= JUDGE_RANGE) {
+    showJudge(closestDistance, LANE_X + lane * LANE_WIDTH + LANE_WIDTH / 2, false);
+    respawnNote(closest);
   }
 }
 
 // 키를 누르는 순간 (keydown)
 document.addEventListener("keydown", function (e) {
-  console.log(e.key);                    // 5장 Step 1 확인용: 눌린 키 이름을 콘솔(F12)에 출력. 확인이 끝나면 이 줄을 지운다
   if (!GAME_KEYS.includes(e.key)) return; // 게임에 안 쓰는 키는 무시
   e.preventDefault();                    // 방향키·스페이스바로 페이지가 스크롤되지 않게 막는다
   if (INPUT_MODE === "A") {

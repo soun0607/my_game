@@ -97,7 +97,22 @@ function spaceHitbox() {
   };
 }
 
-let botPose = "bot";      // 지금 봇이 하고 있는 포즈 (그림 이름). 노트가 지나갈 때마다 바뀐다
+let botPose = "bot";      // 지금 봇이 하고 있는 포즈 (그림 이름). 봇이 노트를 맞출 때마다 바뀐다
+
+// ===== 점수 (6장) =====
+const JUDGE_SCORES = { PERFECT: 700, GREAT: 500, GOOD: 200, MISS: 0 };  // 판정별 점수 (기획서 5번)
+let playerScore = 0;       // 내 점수
+let botScore = 0;          // 봇 점수
+
+// 스테이지별 봇 설정 (기획서 5번 스테이지 표): 초급 / 중급 / 상급
+const STAGE_BOT_HIT_CHANCES = [0.7, 0.9, 1.0];   // 봇이 노트를 맞출 확률
+const STAGE_BOT_GRADE_RATIOS = [                  // 맞춘 노트의 판정 비율 [PERFECT, GREAT, GOOD]
+  [0.3, 0.4, 0.3],
+  [0.5, 0.3, 0.2],
+  [0.6, 0.3, 0.1],
+];
+let botHitChance = STAGE_BOT_HIT_CHANCES[0];     // 지금은 스테이지 1(초급)
+let botGradeRatio = STAGE_BOT_GRADE_RATIOS[0];
 let frameCount = 0;        // 게임이 시작된 뒤 지난 프레임 수 (반짝이 깜빡임에 쓴다)
 let spaceNoteY = lineY;    // Space 노트(레인 4개를 가로지르는 긴 막대)의 y. 줄 맨 뒤에서 시작한다
 const CHORD_CHANCE = 0.2;  // 동시 노트(두 키를 같이 눌러야 하는 노트)가 나올 확률 (0.2 = 20%)
@@ -226,9 +241,9 @@ function draw() {
   // 3. 점수판
   ctx.font = "22px sans-serif";
   ctx.textAlign = "left";
-  ctx.fillText("나: 0", 20, 35);                   // 왼쪽 위: 내 점수
+  ctx.fillText("나: " + playerScore, 20, 35);      // 왼쪽 위: 내 점수
   ctx.textAlign = "right";
-  ctx.fillText("봇: 0", 780, 35);                  // 오른쪽 위: 봇 점수 (x=780에서 끝나게)
+  ctx.fillText("봇: " + botScore, 780, 35);        // 오른쪽 위: 봇 점수 (x=780에서 끝나게)
   ctx.font = "16px sans-serif";
   ctx.textAlign = "center";
   ctx.fillText("STAGE 1 초급", 400, 128);          // 가운데: 스테이지
@@ -404,6 +419,23 @@ function lastNote(except) {
 
 // 게임 키 하나를 눌렀을 때 할 일: 그 방향 포즈를 취하고, 판정선 근처의 노트를 맞췄는지 확인한다
 // 노트를 맞췄을 때: 판정선과의 거리로 정확도를 계산해 판정 등급을 정하고, 화면에 띄울 준비를 한다
+// 봇이 판정선을 지나가는 노트 하나를 친다
+// botHitChance 확률로 맞추고, 맞추면 판정 비율대로 등급을 뽑아 점수를 얻고 그 방향 포즈를 취한다. 못 맞추면 MISS(0점)
+function botPlay(pose) {
+  if (Math.random() >= botHitChance) return;       // 놓쳤다 → 점수 없음, 포즈도 그대로
+  const roll = Math.random();                      // 0 ~ 1 사이 아무 수로 등급을 뽑는다
+  let grade;
+  if (roll < botGradeRatio[0]) {
+    grade = "PERFECT";                             // 0 ~ 0.3 → PERFECT (30%)
+  } else if (roll < botGradeRatio[0] + botGradeRatio[1]) {
+    grade = "GREAT";                               // 0.3 ~ 0.7 → GREAT (40%)
+  } else {
+    grade = "GOOD";                                // 나머지 → GOOD (30%)
+  }
+  botScore = botScore + JUDGE_SCORES[grade];
+  botPose = pose;
+}
+
 function showJudge(distance, effectX, wide) {
   // 거리 0이면 1(100%), 판정 범위 끝이면 0(0%). 소수 계산 오차(0.30000000000000004 같은)를 없애려고 소수 둘째 자리에서 반올림한다
   const accuracy = Math.round((1 - distance / JUDGE_RANGE) * 100) / 100;
@@ -417,6 +449,7 @@ function showJudge(distance, effectX, wide) {
     judgeText = "MISS";
   }
   judgeTimer = JUDGE_SHOW_FRAMES;                 // 지금부터 JUDGE_SHOW_FRAMES 동안 보여 준다
+  playerScore = playerScore + JUDGE_SCORES[judgeText];   // 판정별 점수를 내 점수에 더한다
   // 맞춘 자리에 이펙트를 하나 추가한다
   hitEffects.push({ x: effectX, y: JUDGE_Y, color: JUDGE_COLORS[judgeText], wide: wide, timer: HIT_EFFECT_FRAMES });
 }
@@ -500,15 +533,15 @@ function gameLoop() {
   for (const note of notes) {
     const before = note.y + NOTE_SIZE / 2;         // 내리기 전 노트 가운데
     note.y = note.y + noteSpeed;
-    // 노트 가운데가 이번 프레임에 판정선을 지나갔으면, 봇이 그 방향 포즈를 취한다 (봇이 노트를 친 것처럼)
+    // 노트 가운데가 이번 프레임에 판정선을 지나갔으면, 봇이 그 노트를 친다
     if (before < JUDGE_Y && note.y + NOTE_SIZE / 2 >= JUDGE_Y) {
-      botPose = "bot_" + LANE_NAMES[note.lane];
+      botPlay("bot_" + LANE_NAMES[note.lane]);
     }
   }
   const spaceBefore = spaceNoteY + 20;
   spaceNoteY = spaceNoteY + noteSpeed;
   if (spaceBefore < JUDGE_Y && spaceNoteY + 20 >= JUDGE_Y) {
-    botPose = "bot_space";                         // Space 노트가 판정선을 지나가면 팔 벌리기 포즈
+    botPlay("bot_space");                          // Space 노트가 판정선을 지나가면 봇이 친다 (맞추면 팔 벌리기 포즈)
   }
   for (const note of notes) {
     // 레인 맨 아래로 빠져나가면 줄 맨 뒤로 돌아간다

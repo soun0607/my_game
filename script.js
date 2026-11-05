@@ -143,9 +143,9 @@ function playerAccuracy() {
 // 스테이지별 봇 설정 (기획서 5번 스테이지 표): 초급 / 중급 / 상급
 const STAGE_BOT_HIT_CHANCES = [0.9, 0.9, 1.0];   // 봇이 노트를 맞출 확률
 const STAGE_BOT_GRADE_RATIOS = [                  // 맞춘 노트의 판정 비율 [PERFECT, GREAT, GOOD]
-  [0.7, 0.3, 0.0],
-  [0.6, 0.4, 0.0],
+  [0.5, 0.3, 0.2],
   [0.6, 0.3, 0.1],
+  [0.7, 0.2, 0.1],
 ];
 let botHitChance = STAGE_BOT_HIT_CHANCES[0];     // 지금은 스테이지 1(초급)
 let botGradeRatio = STAGE_BOT_GRADE_RATIOS[0];

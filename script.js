@@ -140,7 +140,7 @@ let frameCount = 0;        // 게임이 시작된 뒤 지난 프레임 수 (반�
 let spaceNoteY = lineY;    // Space 노트(레인 4개를 가로지르는 긴 막대)의 y. 줄 맨 뒤에서 시작한다
 const CHORD_CHANCE = 0.2;  // 동시 노트(두 키를 같이 눌러야 하는 노트)가 나올 확률 (0.2 = 20%)
 // 스테이지별 노트 속도 (속도 튜닝으로 정함): 초급 2 / 중급 4 / 상급 6
-const STAGE_SPEEDS = [3, 4, 6];
+const STAGE_SPEEDS = [5, 5, 6];
 let noteSpeed = STAGE_SPEEDS[0];   // 지금은 스테이지 1(초급). 노트가 한 프레임에 아래로 내려오는 거리
 const NOTE_SIZE = 50;      // 노트 그림 크기 (가로 = 세로)
 const TARGET_SIZE = Math.round(NOTE_SIZE * 1.2);  // 판정선 위 과녁(판정 박스) 그림 크기: 노트의 1.2배 = 60 (레인 폭과 같다)

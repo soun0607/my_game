@@ -40,8 +40,33 @@ let notes = createNotes();
 // ===== 입력과 판정 (5장) =====
 const INPUT_MODE = "B";    // 조작 방식. "A" = 키 이벤트 안에서 바로 판정 (비교 실험용), "B" = keys에 기록하고 게임 루프에서 판정
 const JUDGE_RANGE = 50;    // 노트 가운데가 판정선에서 이 거리(px) 안에 있을 때 키를 누르면 맞춘 것
-const KEY_TO_LANE = { ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3 }; // 방향키 → 레인 번호
-const GAME_KEYS = ["ArrowLeft", "ArrowDown", "ArrowUp", "ArrowRight", " "];   // 게임에 쓰는 키 (" "는 스페이스바)
+// 조작키: 플레이테스트 피드백으로 방향키 대신 A S K L (왼손 두 손가락 + 오른손 두 손가락)
+const KEY_TO_LANE = { a: 0, s: 1, k: 2, l: 3 };  // 키 → 레인 번호 (레인 순서: ← ↓ ↑ →)
+const GAME_KEYS = ["a", "s", "k", "l", " "];   // 게임에 쓰는 키 (" "는 스페이스바)
+const LANE_KEY_LABELS = ["A", "S", "K", "L"];  // 레인 아래에 보여 줄 키 이름
+
+// 키 이름을 소문자로 맞춘다 (Caps Lock이나 Shift 때문에 "A"로 와도 "a"로 처리). " " 같은 키는 그대로
+function normalizeKey(key) {
+  return key.length === 1 ? key.toLowerCase() : key;
+}
+
+// ===== 싱크 조절 (플레이테스트 피드백) =====
+// 싱크 = 판정 기준을 몇 ms 늦게(+) 또는 일찍(-) 잡을지. 화면보다 손이 늦거나 빠른 사람을 위해 맞춘다
+// +면 판정 기준이 판정선보다 아래로 내려가서 조금 늦게 눌러도 정확하게 판정된다
+const SYNC_MIN = -150;     // 싱크 막대 최소값 (ms)
+const SYNC_MAX = 150;      // 싱크 막대 최대값 (ms)
+let syncMs = 0;            // 지금 싱크 값 (ms)
+try {
+  syncMs = Number(localStorage.getItem("syncMs")) || 0;   // 지난번에 맞춘 값을 이 브라우저에서 기억해 둔다
+} catch (e) {
+  syncMs = 0;              // 저장소를 못 쓰는 환경이면 0으로
+}
+
+// 판정 기준 y: 판정선 + 싱크만큼 노트가 움직이는 거리
+// (1초에 약 60프레임, 한 프레임에 noteSpeed px → 1ms에 noteSpeed × 60 / 1000 px)
+function judgeCenterY() {
+  return JUDGE_Y + (syncMs * noteSpeed * 60) / 1000;
+}
 const keys = {};           // 지금 눌려 있는 키를 적어 두는 메모장 (true = 눌림, false = 안 눌림)
 const prevKeys = {};       // 지난 프레임에 눌려 있던 키 (이번 프레임에 "새로" 눌렸는지 알아내는 데 쓴다)
 let playerPose = "player"; // 지금 내 캐릭터가 하고 있는 포즈 (그림 이름)
@@ -79,7 +104,7 @@ function judgeBox(lane) {
   const isAll = lane === undefined;
   return {
     x: isAll ? LANE_X : LANE_X + lane * LANE_WIDTH,
-    y: JUDGE_Y - JUDGE_RANGE,
+    y: judgeCenterY() - JUDGE_RANGE,   // 싱크만큼 위아래로 옮겨진 판정 기준을 가운데로
     width: isAll ? LANE_WIDTH * LANE_COUNT : LANE_WIDTH,
     height: JUDGE_RANGE * 2,
   };
@@ -110,13 +135,18 @@ const TIME_LIMIT = 90;     // 제한 시간 (초)
 let gameState = "countdown"; // "countdown" = 시작 전 3초 카운트다운, "playing" = 플레이 중, "gameover" = 시간이 끝나서 결과 화면
 const COUNTDOWN_SECONDS = 3;   // 게임 시작 전 카운트다운 시간 (초). 스테이지와 상관없이 매 판 시작 때마다 나온다
 let countdownStart = Date.now(); // 카운트다운을 시작한 순간의 시각 (밀리초)
+// 일시정지: ESC로 "paused" 상태가 된다. 멈춘 동안 흐른 시간은 제한 시간·카운트다운에서 빼 준다
+let pausedFrom = "playing";   // 일시정지 전에 어떤 상태였는지 ("countdown" 또는 "playing")
+let pauseStart = 0;           // 일시정지를 시작한 순간의 시각 (밀리초)
 let startTime = Date.now(); // 게임을 시작한 순간의 시각 (밀리초). 프레임 수가 아니라 실제 흐른 시간을 재는 데 쓴다
 
 // 남은 시간(초): 제한 시간 - 흐른 시간. Date.now()는 지금 시각(밀리초)이라 시작 시각을 빼고 1000으로 나누면 흐른 초
 // Math.floor로 소수점을 버린다. 0보다 작아지지 않게 Math.max로 막는다
 function remainingTime() {
   if (gameState === "countdown") return TIME_LIMIT;   // 카운트다운 중에는 아직 시간이 흐르지 않는다
-  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  if (gameState === "paused" && pausedFrom === "countdown") return TIME_LIMIT;
+  const now = gameState === "paused" ? pauseStart : Date.now();   // 일시정지 중에는 시간이 멈춰 있다
+  const elapsed = Math.floor((now - startTime) / 1000);
   return Math.max(0, TIME_LIMIT - elapsed);
 }
 
@@ -156,7 +186,7 @@ const CHORD_CHANCE = 0.2;  // 동시 노트(두 키를 같이 눌러야 하는 �
 const STAGE_SPEEDS = [3, 4, 5];
 let noteSpeed = STAGE_SPEEDS[0];   // 지금은 스테이지 1(초급). 노트가 한 프레임에 아래로 내려오는 거리
 const NOTE_SIZE = 50;      // 노트 그림 크기 (가로 = 세로)
-const TARGET_SIZE = Math.round(NOTE_SIZE * 1.2);  // 판정선 위 과녁(판정 박스) 그림 크기: 노트의 1.2배 = 60 (레인 폭과 같다)
+const TARGET_SIZE = Math.round(NOTE_SIZE * 1.1);  // 판정선 위 과녁(판정 박스) 그림 크기: 노트의 1.1배 = 55
 const NOTE_START_Y = LANE_TOP;                // 노트가 다시 나타나는 y (레인 맨 위)
 const NOTE_END_Y = LANE_TOP + LANE_HEIGHT;    // 노트가 사라지는 y (레인 맨 아래). 노트 윗부분까지 이 선을 넘으면 줄 맨 뒤로 돌아간다
 
@@ -202,15 +232,7 @@ const IMAGE_FILES = {
   crowd2: "assets/crowd2.png",
   crowd3: "assets/crowd3.png",
   crowd4: "assets/crowd4.png",
-  note_left: "assets/note_left.png",
-  note_down: "assets/note_down.png",
-  note_up: "assets/note_up.png",
-  note_right: "assets/note_right.png",
   note_space: "assets/note_space.png",
-  target_left: "assets/target_left.png",
-  target_down: "assets/target_down.png",
-  target_up: "assets/target_up.png",
-  target_right: "assets/target_right.png",
   sparkle: "assets/sparkle.png",
 };
 const LANE_NAMES = ["left", "down", "up", "right"]; // 레인 순서대로 (← ↓ ↑ →)
@@ -233,6 +255,27 @@ for (const name in IMAGE_FILES) {
 }
 
 // ===== 그리기 =====
+
+// 키보드 키 모양(둥근 사각형 + 글자)을 그린다. 노트와 과녁에 쓴다
+// filled = true: 흰 키에 보라 글자 (노트) / false: 흰 테두리에 흰 글자 (과녁)
+function drawKeyCap(x, y, size, letter, filled) {
+  ctx.beginPath();
+  ctx.roundRect(x + 2, y + 2, size - 4, size - 4, size * 0.2);   // 모서리가 둥근 사각형
+  if (filled) {
+    ctx.fillStyle = "white";
+    ctx.fill();
+  } else {
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+  ctx.fillStyle = filled ? "#3d2d55" : "white";
+  ctx.font = "bold " + Math.round(size * 0.5) + "px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(letter, x + size / 2, y + size / 2 + 1);
+  ctx.textBaseline = "alphabetic";
+}
 function draw() {
   // 1. 배경: 위는 어두운 보라, 아래로 갈수록 밝은 보라가 되는 그라데이션 무대
   // createLinearGradient(시작x, 시작y, 끝x, 끝y): 위(0)에서 아래(600)로 색이 바뀐다
@@ -321,7 +364,7 @@ function draw() {
     const laneCenter = laneLeft + LANE_WIDTH / 2;      // 레인 가운데 x
     // 누르고 있는 레인의 과녁은 조금 작아져서 "눌린" 느낌을 준다
     const size = keys[GAME_KEYS[i]] ? TARGET_SIZE - 8 : TARGET_SIZE;
-    ctx.drawImage(images["target_" + LANE_NAMES[i]], laneCenter - size / 2, JUDGE_Y - size / 2, size, size); // 가운데가 레인 가운데 · 판정선에 오게
+    drawKeyCap(laneCenter - size / 2, JUDGE_Y - size / 2, size, LANE_KEY_LABELS[i], false); // 테두리만 있는 키 (가운데가 레인 가운데 · 판정선에 오게)
   }
   // 스페이스바를 누르고 있으면 판정선이 굵게 빛난다
   if (keys[" "]) {
@@ -338,7 +381,7 @@ function draw() {
   ctx.clip();
   for (const note of notes) {
     const x = LANE_X + note.lane * LANE_WIDTH + (LANE_WIDTH - NOTE_SIZE) / 2;
-    ctx.drawImage(images["note_" + LANE_NAMES[note.lane]], x, note.y, NOTE_SIZE, NOTE_SIZE);
+    drawKeyCap(x, note.y, NOTE_SIZE, LANE_KEY_LABELS[note.lane], true);   // 흰 키 위에 그 레인의 키 이름
   }
 
   // 7. Space 노트: 레인 4개를 가로지르는 긴 막대 + 가운데에 Space 키 그림
@@ -416,6 +459,40 @@ function draw() {
     ctx.drawImage(crowd[i % 4], i * CROWD_GAP - 36, CROWD_Y - jump, CROWD_WIDTH, CROWD_HEIGHT);
   }
 }
+
+// ===== 싱크 조절 막대 (index.html의 화면 아래) =====
+const syncSlider = document.getElementById("sync");
+const syncValue = document.getElementById("sync-value");
+// 싱크 값을 정하고, 막대·글자에 반영하고, 이 브라우저에 기억해 둔다
+function setSync(value) {
+  syncMs = Math.max(SYNC_MIN, Math.min(SYNC_MAX, value));   // 최소~최대 사이로 자른다
+  syncSlider.value = syncMs;
+  syncValue.textContent = (syncMs > 0 ? "+" : "") + syncMs + "ms";
+  try {
+    localStorage.setItem("syncMs", syncMs);
+  } catch (e) {
+    // 저장소를 못 쓰는 환경이면 기억만 못 할 뿐 게임은 그대로 된다
+  }
+}
+syncSlider.min = SYNC_MIN;
+syncSlider.max = SYNC_MAX;
+setSync(syncMs);
+// 막대를 움직이면 값이 바뀐다. 다 움직이면 막대에서 포커스를 빼서, 게임 키가 막대로 가지 않게 한다
+syncSlider.addEventListener("input", function () {
+  setSync(Number(syncSlider.value));
+});
+syncSlider.addEventListener("change", function () {
+  syncSlider.blur();
+});
+// − / + 버튼: 10ms씩
+document.getElementById("sync-minus").addEventListener("click", function () {
+  setSync(syncMs - 10);
+  this.blur();   // 버튼에 포커스가 남으면 스페이스바가 버튼을 또 누르게 된다
+});
+document.getElementById("sync-plus").addEventListener("click", function () {
+  setSync(syncMs + 10);
+  this.blur();
+});
 
 // ===== 키 입력 =====
 
@@ -499,7 +576,7 @@ function pressKey(key) {
     playerPose = "player_space";
     // Space 노트 판정 사각형이 판정 영역(레인 전체 폭)과 겹치면 맞춘 것
     if (checkCollision(spaceHitbox(), judgeBox())) {
-      const distance = Math.abs(spaceNoteY + 20 - JUDGE_Y);   // 판정 등급은 판정선과의 거리로 정한다
+      const distance = Math.abs(spaceNoteY + 20 - judgeCenterY());   // 판정 등급은 판정 기준과의 거리로 정한다
       showJudge(distance, LANE_X + (LANE_WIDTH * LANE_COUNT) / 2, true);
       // 판정선을 지나기 전에 맞춰서 노트가 사라지면, 봇은 이 노트를 칠 기회가 없다 → 지금 봇도 치게 한다
       if (spaceNoteY + 20 < JUDGE_Y) botPlay("bot_space");
@@ -517,7 +594,7 @@ function pressKey(key) {
   let closestDistance = Infinity;
   for (const note of notes) {
     if (!checkCollision(noteHitbox(note), box)) continue;   // 판정 영역과 안 겹치면 건너뛴다
-    const distance = Math.abs(note.y + NOTE_SIZE / 2 - JUDGE_Y);  // 노트 가운데가 판정선에서 몇 px 떨어져 있는가
+    const distance = Math.abs(note.y + NOTE_SIZE / 2 - judgeCenterY());  // 노트 가운데가 판정 기준에서 몇 px 떨어져 있는가
     if (distance < closestDistance) {
       closest = note;
       closestDistance = distance;
@@ -537,23 +614,29 @@ function pressKey(key) {
 
 // 키를 누르는 순간 (keydown)
 document.addEventListener("keydown", function (e) {
+  // ESC: 카운트다운·플레이 중이면 일시정지, 일시정지 중이면 다시 계속
+  if (e.key === "Escape" && !e.repeat) {
+    togglePause();
+    return;
+  }
   // 언제든지(카운트다운·플레이 중·결과 화면) R(대문자 R도)을 누르면 처음부터 다시 시작한다
   // e.repeat: 키를 꾹 눌러서 자동 반복으로 온 keydown이면 true → 꾹 누르고 있어도 재시작은 한 번만 된다
   if ((e.key === "r" || e.key === "R") && !e.repeat) {
     resetGame();
     return;
   }
-  if (!GAME_KEYS.includes(e.key)) return; // 게임에 안 쓰는 키는 무시
-  e.preventDefault();                    // 방향키·스페이스바로 페이지가 스크롤되지 않게 막는다
+  const key = normalizeKey(e.key);        // "A"로 와도 "a"로
+  if (!GAME_KEYS.includes(key)) return;   // 게임에 안 쓰는 키는 무시
+  e.preventDefault();                    // 스페이스바로 페이지가 스크롤되지 않게 막는다
   if (INPUT_MODE === "A" && gameState === "playing") {
-    pressKey(e.key);                     // 방식 A: 이벤트 안에서 바로 판정하고 포즈를 바꾼다
+    pressKey(key);                       // 방식 A: 이벤트 안에서 바로 판정하고 포즈를 바꾼다
   }
-  keys[e.key] = true;                    // 방식 B: "눌렸다"고 기록만 한다. 판정은 게임 루프가 한다
+  keys[key] = true;                      // 방식 B: "눌렸다"고 기록만 한다. 판정은 게임 루프가 한다
 });
 
 // 키에서 손을 떼는 순간 (keyup)
 document.addEventListener("keyup", function (e) {
-  keys[e.key] = false;                   // "떼었다"고 기록한다
+  keys[normalizeKey(e.key)] = false;     // "떼었다"고 기록한다
 });
 
 // 게임을 처음 상태로 되돌린다: 점수, 시간, 노트, 포즈, 판정 표시를 전부 처음 값으로
@@ -575,6 +658,36 @@ function resetGame() {
 }
 
 // 카운트다운 화면: 화면 정중앙에 남은 초(3 → 2 → 1)를 크게 띄운다
+// 일시정지 켜기/끄기. 결과 화면에서는 아무 일도 안 한다
+function togglePause() {
+  if (gameState === "countdown" || gameState === "playing") {
+    pausedFrom = gameState;
+    pauseStart = Date.now();
+    gameState = "paused";
+  } else if (gameState === "paused") {
+    // 멈춰 있던 시간만큼 시작 시각을 뒤로 미룬다 → 남은 시간과 카운트다운이 멈춘 자리에서 이어진다
+    const pausedTime = Date.now() - pauseStart;
+    startTime = startTime + pausedTime;
+    countdownStart = countdownStart + pausedTime;
+    gameState = pausedFrom;
+  }
+}
+
+// 일시정지 화면: 어두운 막 + 안내
+function drawPause() {
+  ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "white";
+  ctx.font = "bold 60px sans-serif";
+  ctx.fillText("일시정지", 400, 250);
+  ctx.font = "22px sans-serif";
+  ctx.fillText("ESC: 계속하기     R: 처음부터 다시 시작", 400, 320);
+  ctx.fillStyle = "#ffd166";
+  ctx.font = "20px sans-serif";
+  ctx.fillText("싱크: " + (syncMs > 0 ? "+" : "") + syncMs + "ms  (화면 아래 막대로 조절)", 400, 370);
+}
+
 function drawCountdown() {
   const elapsed = (Date.now() - countdownStart) / 1000;          // 카운트다운 시작 후 흐른 초 (소수 포함)
   const number = COUNTDOWN_SECONDS - Math.floor(elapsed);         // 3, 2, 1
@@ -698,6 +811,8 @@ function gameLoop() {
   draw();
   if (gameState === "countdown") {
     drawCountdown();
+  } else if (gameState === "paused") {
+    drawPause();
   } else if (gameState === "gameover") {
     drawResult();
   }

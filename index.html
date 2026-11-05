@@ -10,5 +10,13 @@
 </head>
 <body>
   <canvas id="game" width="800" height="600"></canvas>
+  <!-- 싱크 조절: 판정이 늦거나 빠르게 느껴질 때 맞춘다 (+면 조금 늦게 눌러도 정확하게 판정) -->
+  <div class="sync">
+    <label for="sync">싱크 조절</label>
+    <button id="sync-minus" type="button" aria-label="싱크 10ms 빠르게">−</button>
+    <input id="sync" type="range" step="10" value="0">
+    <button id="sync-plus" type="button" aria-label="싱크 10ms 늦게">+</button>
+    <output id="sync-value" for="sync">0ms</output>
+  </div>
 </body>
 </html>

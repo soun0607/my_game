@@ -22,13 +22,20 @@ let noteGap = STAGE_GAPS[0];   // 지금은 스테이지 1(초급)
 const NOTE_COUNT = 11;     // 화살표 노트 개수. 레인을 다 채우고도 위에서 기다리는 노트가 남을 만큼 넉넉하게
                            // (모자라면 줄 맨 뒤가 비어서 동시 노트가 만들어지지 않는다. 기준: 노트가 지나가는 거리 430 ÷ 가장 좁은 간격(70) + 4)
 
-let notes = [];
-let lineY = 420;           // 줄을 세울 다음 위치. 판정선 근처(420)부터 위쪽으로 올라가며 세운다
-for (let i = 0; i < NOTE_COUNT; i++) {
-  // 레인 위(150)보다 위에 있는 노트는 아직 안 보이고, 줄을 서서 기다린다
-  notes.push({ lane: Math.floor(Math.random() * 4), y: lineY });
-  lineY = lineY - noteGap;
+// 노트 NOTE_COUNT개를 판정선 근처(420)부터 위쪽으로 noteGap 간격으로 줄 세워 만든다 (게임 시작·재시작 때 쓴다)
+// 레인 위(150)보다 위에 있는 노트는 아직 안 보이고, 줄을 서서 기다린다
+// 줄 맨 뒤 위치는 Space 노트 자리로 쓰려고 lineY에 남겨 둔다
+let lineY = 420;
+function createNotes() {
+  const list = [];
+  lineY = 420;
+  for (let i = 0; i < NOTE_COUNT; i++) {
+    list.push({ lane: Math.floor(Math.random() * 4), y: lineY });
+    lineY = lineY - noteGap;
+  }
+  return list;
 }
+let notes = createNotes();
 // ===== 입력과 판정 (5장) =====
 const INPUT_MODE = "B";    // 조작 방식. "A" = 키 이벤트 안에서 바로 판정 (비교 실험용), "B" = keys에 기록하고 게임 루프에서 판정
 const JUDGE_RANGE = 50;    // 노트 가운데가 판정선에서 이 거리(px) 안에 있을 때 키를 누르면 맞춘 것
@@ -95,6 +102,18 @@ function spaceHitbox() {
     width: LANE_WIDTH * LANE_COUNT - 10,
     height: NOTE_HITBOX_HEIGHT,
   };
+}
+
+// ===== 게임 상태와 제한 시간 (6장) =====
+const TIME_LIMIT = 90;     // 제한 시간 (초)
+let gameState = "playing"; // "playing" = 플레이 중, "gameover" = 시간이 끝나서 결과 화면
+let startTime = Date.now(); // 게임을 시작한 순간의 시각 (밀리초). 프레임 수가 아니라 실제 흐른 시간을 재는 데 쓴다
+
+// 남은 시간(초): 제한 시간 - 흐른 시간. Date.now()는 지금 시각(밀리초)이라 시작 시각을 빼고 1000으로 나누면 흐른 초
+// Math.floor로 소수점을 버린다. 0보다 작아지지 않게 Math.max로 막는다
+function remainingTime() {
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  return Math.max(0, TIME_LIMIT - elapsed);
 }
 
 let botPose = "bot";      // 지금 봇이 하고 있는 포즈 (그림 이름). 봇이 노트를 맞출 때마다 바뀐다
@@ -188,7 +207,10 @@ for (const name in IMAGE_FILES) {
   images[name] = new Image();
   images[name].onload = function () {
     loadedCount++;
-    if (loadedCount === totalCount) gameLoop();   // 그림을 다 불러온 뒤에 게임 루프를 시작한다
+    if (loadedCount === totalCount) {
+      resetGame();                       // 그림을 다 불러온 순간부터 시간을 잰다
+      gameLoop();                        // 그림을 다 불러온 뒤에 게임 루프를 시작한다 (루프는 여기서 딱 한 번만 시작한다)
+    }
   };
   images[name].src = IMAGE_FILES[name];
 }
@@ -247,7 +269,7 @@ function draw() {
   ctx.font = "16px sans-serif";
   ctx.textAlign = "center";
   ctx.fillText("STAGE 1 초급", 400, 128);          // 가운데: 스테이지
-  ctx.fillText("남은 시간: 90", 400, 146);         // 가운데: 남은 시간
+  ctx.fillText("남은 시간: " + remainingTime(), 400, 146); // 가운데: 남은 시간
 
   // 4. 레인 4개: 위는 투명, 아래로 갈수록 진해지는 칸 + 테두리
   const laneGradient = ctx.createLinearGradient(0, LANE_TOP, 0, LANE_TOP + LANE_HEIGHT);
@@ -491,9 +513,14 @@ function pressKey(key) {
 
 // 키를 누르는 순간 (keydown)
 document.addEventListener("keydown", function (e) {
+  // 결과 화면에서 R(대문자 R도)을 누르면 처음부터 다시 시작한다
+  if (gameState === "gameover" && (e.key === "r" || e.key === "R")) {
+    resetGame();
+    return;
+  }
   if (!GAME_KEYS.includes(e.key)) return; // 게임에 안 쓰는 키는 무시
   e.preventDefault();                    // 방향키·스페이스바로 페이지가 스크롤되지 않게 막는다
-  if (INPUT_MODE === "A") {
+  if (INPUT_MODE === "A" && gameState === "playing") {
     pressKey(e.key);                     // 방식 A: 이벤트 안에서 바로 판정하고 포즈를 바꾼다
   }
   keys[e.key] = true;                    // 방식 B: "눌렸다"고 기록만 한다. 판정은 게임 루프가 한다
@@ -504,57 +531,108 @@ document.addEventListener("keyup", function (e) {
   keys[e.key] = false;                   // "떼었다"고 기록한다
 });
 
+// 게임을 처음 상태로 되돌린다: 점수, 시간, 노트, 포즈, 판정 표시를 전부 처음 값으로
+// (재시작할 때 gameLoop()를 또 부르면 루프가 두 개가 되어 게임이 두 배로 빨라진다. 그래서 gameState만 바꾼다)
+function resetGame() {
+  playerScore = 0;
+  botScore = 0;
+  startTime = Date.now();
+  notes = createNotes();
+  spaceNoteY = lineY;            // Space 노트는 줄 맨 뒤에서 시작
+  playerPose = "player";
+  botPose = "bot";
+  judgeTimer = 0;
+  hitEffects = [];
+  gameState = "playing";
+}
+
+// 결과 화면: 무대 위에 어두운 막을 덮고, 가운데에 승패와 점수를 띄운다
+function drawResult() {
+  ctx.fillStyle = "rgba(0, 0, 0, 0.6)";           // 반투명 검은 막
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.textAlign = "center";
+  let resultText = "패배…";
+  let resultColor = "#8fd3ff";
+  if (playerScore > botScore) {
+    resultText = "승리!";
+    resultColor = "#ffd166";
+  } else if (playerScore === botScore) {
+    resultText = "무승부";                        // 점수가 같을 때
+    resultColor = "#ffffff";
+  }
+  ctx.fillStyle = resultColor;
+  ctx.font = "bold 72px sans-serif";
+  ctx.fillText(resultText, 400, 250);
+  ctx.fillStyle = "white";
+  ctx.font = "28px sans-serif";
+  ctx.fillText("내 점수: " + playerScore, 400, 320);
+  ctx.fillText("봇 점수: " + botScore, 400, 360);
+  ctx.font = "18px sans-serif";
+  ctx.fillText("R 키를 눌러 다시 시작", 400, 430);
+}
+
 function gameLoop() {
   // ① 지우기: 이전 프레임에 그린 것을 모두 지운다
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   // ② 계산: 프레임 수를 세고, 키 입력을 판정하고, 노트를 속도만큼 아래로 내린다
+  // (반짝이·관중 애니메이션과 판정 글자·이펙트는 결과 화면에서도 계속 움직인다)
   frameCount = frameCount + 1;
   if (judgeTimer > 0) judgeTimer = judgeTimer - 1;   // 판정 글자가 사라질 때까지 남은 시간을 줄인다
   for (const effect of hitEffects) effect.timer = effect.timer - 1;   // 이펙트 남은 시간을 줄이고
   hitEffects = hitEffects.filter((effect) => effect.timer > 0);      // 다 끝난 이펙트는 목록에서 뺀다
 
-  // 방식 B: keys 메모장을 보고 판정한다
-  if (INPUT_MODE === "B") {
-    let anyKeyHeld = false;
-    for (const key of GAME_KEYS) {
-      // 지금은 눌려 있는데 지난 프레임에는 안 눌려 있었다 = 방금 새로 누른 키 → 한 번만 판정 (꾹 눌러도 연속 판정 안 됨)
-      if (keys[key] && !prevKeys[key]) {
-        pressKey(key);
+  // 플레이 중일 때만: 시간 확인, 키 판정, 노트 이동 (결과 화면에서는 노트가 멈춘다)
+  if (gameState === "playing") {
+    if (remainingTime() === 0) {
+      gameState = "gameover";                         // 제한 시간이 끝났다 → 결과 화면으로
+    }
+
+    // 방식 B: keys 메모장을 보고 판정한다
+    if (INPUT_MODE === "B") {
+      let anyKeyHeld = false;
+      for (const key of GAME_KEYS) {
+        // 지금은 눌려 있는데 지난 프레임에는 안 눌려 있었다 = 방금 새로 누른 키 → 한 번만 판정 (꾹 눌러도 연속 판정 안 됨)
+        if (keys[key] && !prevKeys[key]) {
+          pressKey(key);
+        }
+        if (keys[key]) anyKeyHeld = true;
+        prevKeys[key] = keys[key];
       }
-      if (keys[key]) anyKeyHeld = true;
-      prevKeys[key] = keys[key];
+      if (!anyKeyHeld) playerPose = "player";       // 모든 키에서 손을 떼면 기본 포즈로 돌아온다
     }
-    if (!anyKeyHeld) playerPose = "player";       // 모든 키에서 손을 떼면 기본 포즈로 돌아온다
-  }
 
-  // 먼저 모든 노트를 똑같이 내린 다음, 빠져나간 노트를 처리한다
-  // (내리면서 바로 처리하면 아직 안 내린 노트와 높이가 어긋나 간격이 틀어진다)
-  for (const note of notes) {
-    const before = note.y + NOTE_SIZE / 2;         // 내리기 전 노트 가운데
-    note.y = note.y + noteSpeed;
-    // 노트 가운데가 이번 프레임에 판정선을 지나갔으면, 봇이 그 노트를 친다
-    if (before < JUDGE_Y && note.y + NOTE_SIZE / 2 >= JUDGE_Y) {
-      botPlay("bot_" + LANE_NAMES[note.lane]);
+    // 먼저 모든 노트를 똑같이 내린 다음, 빠져나간 노트를 처리한다
+    // (내리면서 바로 처리하면 아직 안 내린 노트와 높이가 어긋나 간격이 틀어진다)
+    for (const note of notes) {
+      const before = note.y + NOTE_SIZE / 2;         // 내리기 전 노트 가운데
+      note.y = note.y + noteSpeed;
+      // 노트 가운데가 이번 프레임에 판정선을 지나갔으면, 봇이 그 노트를 친다
+      if (before < JUDGE_Y && note.y + NOTE_SIZE / 2 >= JUDGE_Y) {
+        botPlay("bot_" + LANE_NAMES[note.lane]);
+      }
     }
-  }
-  const spaceBefore = spaceNoteY + 20;
-  spaceNoteY = spaceNoteY + noteSpeed;
-  if (spaceBefore < JUDGE_Y && spaceNoteY + 20 >= JUDGE_Y) {
-    botPlay("bot_space");                          // Space 노트가 판정선을 지나가면 봇이 친다 (맞추면 팔 벌리기 포즈)
-  }
-  for (const note of notes) {
-    // 레인 맨 아래로 빠져나가면 줄 맨 뒤로 돌아간다
-    if (note.y > NOTE_END_Y) {                   // 노트 윗부분까지 레인 밖으로 다 나가면
-      respawnNote(note);
+    const spaceBefore = spaceNoteY + 20;
+    spaceNoteY = spaceNoteY + noteSpeed;
+    if (spaceBefore < JUDGE_Y && spaceNoteY + 20 >= JUDGE_Y) {
+      botPlay("bot_space");                          // Space 노트가 판정선을 지나가면 봇이 친다 (맞추면 팔 벌리기 포즈)
     }
-  }
-  if (spaceNoteY > NOTE_END_Y) {               // Space 노트도 레인 밖으로 다 나가면
-    spaceNoteY = nextSpawnY("space");
-  }
+    for (const note of notes) {
+      // 레인 맨 아래로 빠져나가면 줄 맨 뒤로 돌아간다
+      if (note.y > NOTE_END_Y) {                   // 노트 윗부분까지 레인 밖으로 다 나가면
+        respawnNote(note);
+      }
+    }
+    if (spaceNoteY > NOTE_END_Y) {               // Space 노트도 레인 밖으로 다 나가면
+      spaceNoteY = nextSpawnY("space");
+    }
+  } // if (gameState === "playing") 끝
 
-  // ③ 그리기: 바뀐 위치대로 무대 전체를 다시 그린다
+  // ③ 그리기: 바뀐 위치대로 무대 전체를 다시 그린다. 결과 화면이면 그 위에 결과를 덮는다
   draw();
+  if (gameState === "gameover") {
+    drawResult();
+  }
 
   // ④ 다음 프레임에 gameLoop를 또 불러 달라고 브라우저에 부탁한다
   requestAnimationFrame(gameLoop);

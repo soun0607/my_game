@@ -141,10 +141,10 @@ function playerAccuracy() {
 }
 
 // 스테이지별 봇 설정 (기획서 5번 스테이지 표): 초급 / 중급 / 상급
-const STAGE_BOT_HIT_CHANCES = [0.8, 0.9, 1.0];   // 봇이 노트를 맞출 확률
+const STAGE_BOT_HIT_CHANCES = [0.9, 0.9, 1.0];   // 봇이 노트를 맞출 확률
 const STAGE_BOT_GRADE_RATIOS = [                  // 맞춘 노트의 판정 비율 [PERFECT, GREAT, GOOD]
-  [0.3, 0.4, 0.3],
-  [0.5, 0.3, 0.2],
+  [0.7, 0.3, 0.0],
+  [0.6, 0.4, 0.0],
   [0.6, 0.3, 0.1],
 ];
 let botHitChance = STAGE_BOT_HIT_CHANCES[0];     // 지금은 스테이지 1(초급)
@@ -501,6 +501,8 @@ function pressKey(key) {
     if (checkCollision(spaceHitbox(), judgeBox())) {
       const distance = Math.abs(spaceNoteY + 20 - JUDGE_Y);   // 판정 등급은 판정선과의 거리로 정한다
       showJudge(distance, LANE_X + (LANE_WIDTH * LANE_COUNT) / 2, true);
+      // 판정선을 지나기 전에 맞춰서 노트가 사라지면, 봇은 이 노트를 칠 기회가 없다 → 지금 봇도 치게 한다
+      if (spaceNoteY + 20 < JUDGE_Y) botPlay("bot_space");
       spaceNoteY = nextSpawnY("space");
     }
     return;
@@ -525,6 +527,10 @@ function pressKey(key) {
   // 한 번 누르면 노트 하나만 맞춘다
   if (closest) {
     showJudge(closestDistance, LANE_X + lane * LANE_WIDTH + LANE_WIDTH / 2, false);
+    // 봇은 노트가 판정선을 지날 때 친다. 그런데 내가 판정선보다 일찍 맞추면 노트가 바로 사라져서
+    // 봇이 그 노트를 칠 기회가 없어진다 → 아직 판정선을 안 지난 노트라면 지금 봇도 치게 한다
+    // (이미 판정선을 지난 노트는 봇이 벌써 쳤으므로 다시 치지 않는다. 그래서 노트마다 봇은 딱 한 번 친다)
+    if (closest.y + NOTE_SIZE / 2 < JUDGE_Y) botPlay("bot_" + LANE_NAMES[lane]);
     respawnNote(closest);
   }
 }

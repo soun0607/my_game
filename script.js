@@ -60,7 +60,7 @@ const HIT_EFFECT_FRAMES = 20;  // 맞췄을 때 터지는 이펙트가 보이는
 let hitEffects = [];       // 지금 화면에 보이는 이펙트 목록. 하나 = { x, y, color, wide, timer }
 
 // ===== 충돌 판정 (6장) =====
-let showHitbox = true;     // true면 판정 영역과 노트 판정 영역을 빨간 테두리로 그린다 (확인이 끝나면 false로 끈다)
+let showHitbox = false;     // true면 판정 영역과 노트 판정 영역을 빨간 테두리로 그린다 (확인이 끝나면 false로 끈다)
 const NOTE_HITBOX_HEIGHT = 10;  // 노트 판정용 사각형의 세로 크기. 그림(50)보다 얇게, 노트 가운데에 둔다
                                 // (그림 전체로 판정하면 노트 끝만 걸쳐도 맞은 것이 되어서, 판정선에서 먼 노트가 맞는다)
 
@@ -126,6 +126,19 @@ let botPose = "bot";      // 지금 봇이 하고 있는 포즈 (그림 이름).
 const JUDGE_SCORES = { PERFECT: 700, GREAT: 500, GOOD: 200, MISS: 0 };  // 판정별 점수 (기획서 5번)
 let playerScore = 0;       // 내 점수
 let botScore = 0;          // 봇 점수
+
+// 내 정확도 기록 (결과 화면에 보여 준다)
+// 정확도 = 노트마다 얻은 정확도(0~100%)의 평균. 누르지 않고 놓친 노트는 0%로 친다
+let accuracySum = 0;       // 맞춘 노트들의 정확도를 모두 더한 값 (0 ~ 1 단위)
+let gradeCounts = { PERFECT: 0, GREAT: 0, GOOD: 0, MISS: 0 };  // 판정별 개수
+let passedNotes = 0;       // 누르지 않고 레인 밖으로 지나간 노트 수 (MISS로 센다)
+
+// 지금까지의 정확도(%) = 정확도 합 ÷ 전체 노트 수 × 100. 노트가 하나도 없으면 0
+function playerAccuracy() {
+  const total = gradeCounts.PERFECT + gradeCounts.GREAT + gradeCounts.GOOD + gradeCounts.MISS;
+  if (total === 0) return 0;
+  return (accuracySum / total) * 100;
+}
 
 // 스테이지별 봇 설정 (기획서 5번 스테이지 표): 초급 / 중급 / 상급
 const STAGE_BOT_HIT_CHANCES = [0.8, 0.9, 1.0];   // 봇이 노트를 맞출 확률
@@ -474,6 +487,8 @@ function showJudge(distance, effectX, wide) {
     judgeText = "MISS";
   }
   judgeTimer = JUDGE_SHOW_FRAMES;                 // 지금부터 JUDGE_SHOW_FRAMES 동안 보여 준다
+  gradeCounts[judgeText] = gradeCounts[judgeText] + 1;       // 판정별 개수를 센다
+  accuracySum = accuracySum + Math.max(0, accuracy);         // 정확도를 더한다 (판정 범위 끝보다 멀면 0으로)
   playerScore = playerScore + JUDGE_SCORES[judgeText];   // 판정별 점수를 내 점수에 더한다
   // 맞춘 자리에 이펙트를 하나 추가한다
   hitEffects.push({ x: effectX, y: JUDGE_Y, color: JUDGE_COLORS[judgeText], wide: wide, timer: HIT_EFFECT_FRAMES });
@@ -546,6 +561,9 @@ function resetGame() {
   botPose = "bot";
   judgeTimer = 0;
   hitEffects = [];
+  accuracySum = 0;               // 정확도 기록도 처음부터
+  gradeCounts = { PERFECT: 0, GREAT: 0, GOOD: 0, MISS: 0 };
+  passedNotes = 0;
   gameState = "countdown";       // 바로 시작하지 않고 3초 카운트다운부터
   countdownStart = Date.now();
 }
@@ -581,13 +599,25 @@ function drawResult() {
   }
   ctx.fillStyle = resultColor;
   ctx.font = "bold 72px sans-serif";
-  ctx.fillText(resultText, 400, 250);
+  ctx.fillText(resultText, 400, 200);
   ctx.fillStyle = "white";
   ctx.font = "28px sans-serif";
-  ctx.fillText("내 점수: " + playerScore, 400, 320);
-  ctx.fillText("봇 점수: " + botScore, 400, 360);
+  ctx.fillText("내 점수: " + playerScore, 400, 265);
+  ctx.fillText("봇 점수: " + botScore, 400, 305);
+  // 내 정확도: 소수 첫째 자리까지 (toFixed(1) = 소수점 아래 한 자리로 반올림한 글자)
+  ctx.fillStyle = "#ffd166";
+  ctx.font = "bold 30px sans-serif";
+  ctx.fillText("정확도: " + playerAccuracy().toFixed(1) + "%", 400, 365);
+  // 판정별 개수: 판정 색으로 한 줄에
+  ctx.font = "20px sans-serif";
+  const grades = ["PERFECT", "GREAT", "GOOD", "MISS"];
+  for (let i = 0; i < grades.length; i++) {
+    ctx.fillStyle = JUDGE_COLORS[grades[i]];
+    ctx.fillText(grades[i] + " " + gradeCounts[grades[i]], 190 + i * 140, 410);
+  }
+  ctx.fillStyle = "white";
   ctx.font = "18px sans-serif";
-  ctx.fillText("R 키를 눌러 다시 시작", 400, 430);
+  ctx.fillText("R 키를 눌러 다시 시작", 400, 465);
 }
 
 // ===== 게임 루프: 지우기 → 계산 → 그리기를 1초에 약 60번 반복한다 =====
@@ -646,10 +676,14 @@ function gameLoop() {
     for (const note of notes) {
       // 레인 맨 아래로 빠져나가면 줄 맨 뒤로 돌아간다
       if (note.y > NOTE_END_Y) {                   // 노트 윗부분까지 레인 밖으로 다 나가면
+        gradeCounts.MISS = gradeCounts.MISS + 1;   // 못 누르고 지나간 노트 → MISS로 센다 (정확도 0%)
+        passedNotes = passedNotes + 1;
         respawnNote(note);
       }
     }
     if (spaceNoteY > NOTE_END_Y) {               // Space 노트도 레인 밖으로 다 나가면
+      gradeCounts.MISS = gradeCounts.MISS + 1;
+      passedNotes = passedNotes + 1;
       spaceNoteY = nextSpawnY("space");
     }
   } // if (gameState === "playing") 끝

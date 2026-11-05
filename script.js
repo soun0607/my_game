@@ -51,6 +51,52 @@ const JUDGE_COLORS = { PERFECT: "#ffd166", GREAT: "#8fd3ff", GOOD: "#b8f2a0", MI
 const HIT_EFFECT_FRAMES = 20;  // 맞췄을 때 터지는 이펙트가 보이는 시간 (프레임 수)
 let hitEffects = [];       // 지금 화면에 보이는 이펙트 목록. 하나 = { x, y, color, wide, timer }
 
+// ===== 충돌 판정 (6장) =====
+let showHitbox = true;     // true면 판정 영역과 노트 판정 영역을 빨간 테두리로 그린다 (확인이 끝나면 false로 끈다)
+const NOTE_HITBOX_HEIGHT = 10;  // 노트 판정용 사각형의 세로 크기. 그림(50)보다 얇게, 노트 가운데에 둔다
+                                // (그림 전체로 판정하면 노트 끝만 걸쳐도 맞은 것이 되어서, 판정선에서 먼 노트가 맞는다)
+
+// 두 사각형이 겹치는지 검사한다. 사각형 = { x, y, width, height } (x, y는 왼쪽 위 꼭짓점)
+// 가로로도 겹치고 세로로도 겹치면 → 겹친 것이다
+function checkCollision(a, b) {
+  return a.x < b.x + b.width &&     // A의 왼쪽이 B의 오른쪽보다 왼쪽에 있고
+         a.x + a.width > b.x &&     // A의 오른쪽이 B의 왼쪽보다 오른쪽에 있고
+         a.y < b.y + b.height &&    // A의 위가 B의 아래보다 위에 있고
+         a.y + a.height > b.y;      // A의 아래가 B의 위보다 아래에 있으면 → 겹쳤다
+}
+
+// 판정 영역: 판정선 위아래로 JUDGE_RANGE만큼인 사각형
+// lane을 주면 그 레인 한 칸, 안 주면(Space용) 레인 4개 전체 폭
+function judgeBox(lane) {
+  const isAll = lane === undefined;
+  return {
+    x: isAll ? LANE_X : LANE_X + lane * LANE_WIDTH,
+    y: JUDGE_Y - JUDGE_RANGE,
+    width: isAll ? LANE_WIDTH * LANE_COUNT : LANE_WIDTH,
+    height: JUDGE_RANGE * 2,
+  };
+}
+
+// 화살표 노트의 판정용 사각형: 노트 그림 폭 그대로, 높이는 NOTE_HITBOX_HEIGHT로 노트 가운데에
+function noteHitbox(note) {
+  return {
+    x: LANE_X + note.lane * LANE_WIDTH + (LANE_WIDTH - NOTE_SIZE) / 2,
+    y: note.y + NOTE_SIZE / 2 - NOTE_HITBOX_HEIGHT / 2,
+    width: NOTE_SIZE,
+    height: NOTE_HITBOX_HEIGHT,
+  };
+}
+
+// Space 노트의 판정용 사각형: 막대 폭 그대로, 높이는 NOTE_HITBOX_HEIGHT로 막대 가운데에 (그림 높이 40의 절반 = 20)
+function spaceHitbox() {
+  return {
+    x: LANE_X + 5,
+    y: spaceNoteY + 20 - NOTE_HITBOX_HEIGHT / 2,
+    width: LANE_WIDTH * LANE_COUNT - 10,
+    height: NOTE_HITBOX_HEIGHT,
+  };
+}
+
 let botPose = "bot";      // 지금 봇이 하고 있는 포즈 (그림 이름). 노트가 지나갈 때마다 바뀐다
 let frameCount = 0;        // 게임이 시작된 뒤 지난 프레임 수 (반짝이 깜빡임에 쓴다)
 let spaceNoteY = lineY;    // Space 노트(레인 4개를 가로지르는 긴 막대)의 y. 줄 맨 뒤에서 시작한다
@@ -245,7 +291,27 @@ function draw() {
   ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
   ctx.fillRect(LANE_X + 5, spaceNoteY + 14, LANE_WIDTH * LANE_COUNT - 10, 12);
   ctx.drawImage(images.note_space, DJ_X - 20, spaceNoteY, 40, 40);
+  // 7-0. 히트박스: showHitbox가 true면 노트 판정 사각형을 빨간 테두리로 그린다 (레인 안쪽만 보인다)
+  if (showHitbox) {
+    ctx.strokeStyle = "red";
+    ctx.lineWidth = 2;
+    for (const note of notes) {
+      const box = noteHitbox(note);
+      ctx.strokeRect(box.x, box.y, box.width, box.height);   // 노트 판정 사각형
+    }
+    const space = spaceHitbox();
+    ctx.strokeRect(space.x, space.y, space.width, space.height); // Space 노트 판정 사각형
+  }
   ctx.restore();                                         // clip을 풀고 원래 상태로 돌아간다
+  // 판정 영역은 레인 아래로 삐져나올 수 있어서 clip을 푼 뒤에 그린다 (전체 크기가 보이게)
+  if (showHitbox) {
+    ctx.strokeStyle = "red";
+    ctx.lineWidth = 2;
+    for (let i = 0; i < LANE_COUNT; i++) {
+      const box = judgeBox(i);
+      ctx.strokeRect(box.x, box.y, box.width, box.height);   // 레인별 판정 영역
+    }
+  }
 
   // 7-0. 이펙트 2: 맞춘 자리에서 판정 색깔의 별과 고리가 퍼지며 사라진다
   for (const effect of hitEffects) {
@@ -358,9 +424,9 @@ function showJudge(distance, effectX, wide) {
 function pressKey(key) {
   if (key === " ") {
     playerPose = "player_space";
-    // Space 노트의 가운데(그림 높이 40의 절반 = 20)가 판정선 근처에 있으면 맞춘 것
-    const distance = Math.abs(spaceNoteY + 20 - JUDGE_Y);
-    if (distance <= JUDGE_RANGE) {
+    // Space 노트 판정 사각형이 판정 영역(레인 전체 폭)과 겹치면 맞춘 것
+    if (checkCollision(spaceHitbox(), judgeBox())) {
+      const distance = Math.abs(spaceNoteY + 20 - JUDGE_Y);   // 판정 등급은 판정선과의 거리로 정한다
       showJudge(distance, LANE_X + (LANE_WIDTH * LANE_COUNT) / 2, true);
       spaceNoteY = nextSpawnY("space");
     }
@@ -368,21 +434,23 @@ function pressKey(key) {
   }
   const lane = KEY_TO_LANE[key];
   playerPose = "player_" + LANE_NAMES[lane];
-  // 같은 방향 노트 중에서 판정선에 가장 가까운 노트를 찾는다
-  // (판정 범위가 넓으면 같은 레인의 노트 두 개가 동시에 범위 안에 들 수 있어서, 가까운 쪽을 맞춰야 판정이 정확하다)
+  // 누른 레인의 판정 영역과 겹치는 노트 중에서 판정선에 가장 가까운 노트를 찾는다
+  // (판정 영역이 레인 한 칸 폭이라, 다른 레인의 노트는 가로로 안 겹쳐서 자동으로 빠진다)
+  // (판정 범위가 넓으면 같은 레인의 노트 두 개가 동시에 겹칠 수 있어서, 가까운 쪽을 맞춰야 판정이 정확하다)
+  const box = judgeBox(lane);
   let closest = null;
   let closestDistance = Infinity;
   for (const note of notes) {
-    const noteCenter = note.y + NOTE_SIZE / 2;     // 노트 그림의 세로 가운데
-    const distance = Math.abs(noteCenter - JUDGE_Y);  // 판정선에서 몇 px 떨어져 있는가
-    if (note.lane === lane && distance < closestDistance) {
+    if (!checkCollision(noteHitbox(note), box)) continue;   // 판정 영역과 안 겹치면 건너뛴다
+    const distance = Math.abs(note.y + NOTE_SIZE / 2 - JUDGE_Y);  // 노트 가운데가 판정선에서 몇 px 떨어져 있는가
+    if (distance < closestDistance) {
       closest = note;
       closestDistance = distance;
     }
   }
-  // 가장 가까운 노트가 판정 범위 안에 있으면 맞춘 것 → 판정을 띄우고 노트를 줄 맨 뒤로 돌려보낸다
+  // 겹친 노트가 있으면 맞춘 것 → 판정을 띄우고 노트를 줄 맨 뒤로 돌려보낸다
   // 한 번 누르면 노트 하나만 맞춘다
-  if (closest && closestDistance <= JUDGE_RANGE) {
+  if (closest) {
     showJudge(closestDistance, LANE_X + lane * LANE_WIDTH + LANE_WIDTH / 2, false);
     respawnNote(closest);
   }

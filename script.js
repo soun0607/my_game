@@ -22,13 +22,14 @@ let noteGap = STAGE_GAPS[0];   // 지금은 스테이지 1(초급)
 const NOTE_COUNT = 11;     // 화살표 노트 개수. 레인을 다 채우고도 위에서 기다리는 노트가 남을 만큼 넉넉하게
                            // (모자라면 줄 맨 뒤가 비어서 동시 노트가 만들어지지 않는다. 기준: 노트가 지나가는 거리 430 ÷ 가장 좁은 간격(70) + 4)
 
-// 노트 NOTE_COUNT개를 판정선 근처(420)부터 위쪽으로 noteGap 간격으로 줄 세워 만든다 (게임 시작·재시작 때 쓴다)
-// 레인 위(150)보다 위에 있는 노트는 아직 안 보이고, 줄을 서서 기다린다
+// 노트 NOTE_COUNT개를 레인 바로 위(안 보이는 곳)부터 위쪽으로 noteGap 간격으로 줄 세워 만든다 (게임 시작·재시작 때 쓴다)
+// 처음에는 레인이 비어 있다가, 카운트다운이 끝나면 첫 노트부터 레인 위에서 내려온다
 // 줄 맨 뒤 위치는 Space 노트 자리로 쓰려고 lineY에 남겨 둔다
-let lineY = 420;
+const FIRST_NOTE_Y = 150 - 50;   // 첫 노트 위치 = 레인 맨 위(150) - 노트 크기(50). 레인 바로 위라 아직 안 보인다
+let lineY = FIRST_NOTE_Y;
 function createNotes() {
   const list = [];
-  lineY = 420;
+  lineY = FIRST_NOTE_Y;
   for (let i = 0; i < NOTE_COUNT; i++) {
     list.push({ lane: Math.floor(Math.random() * 4), y: lineY });
     lineY = lineY - noteGap;
@@ -106,12 +107,15 @@ function spaceHitbox() {
 
 // ===== 게임 상태와 제한 시간 (6장) =====
 const TIME_LIMIT = 90;     // 제한 시간 (초)
-let gameState = "playing"; // "playing" = 플레이 중, "gameover" = 시간이 끝나서 결과 화면
+let gameState = "countdown"; // "countdown" = 시작 전 3초 카운트다운, "playing" = 플레이 중, "gameover" = 시간이 끝나서 결과 화면
+const COUNTDOWN_SECONDS = 3;   // 게임 시작 전 카운트다운 시간 (초). 스테이지와 상관없이 매 판 시작 때마다 나온다
+let countdownStart = Date.now(); // 카운트다운을 시작한 순간의 시각 (밀리초)
 let startTime = Date.now(); // 게임을 시작한 순간의 시각 (밀리초). 프레임 수가 아니라 실제 흐른 시간을 재는 데 쓴다
 
 // 남은 시간(초): 제한 시간 - 흐른 시간. Date.now()는 지금 시각(밀리초)이라 시작 시각을 빼고 1000으로 나누면 흐른 초
 // Math.floor로 소수점을 버린다. 0보다 작아지지 않게 Math.max로 막는다
 function remainingTime() {
+  if (gameState === "countdown") return TIME_LIMIT;   // 카운트다운 중에는 아직 시간이 흐르지 않는다
   const elapsed = Math.floor((Date.now() - startTime) / 1000);
   return Math.max(0, TIME_LIMIT - elapsed);
 }
@@ -513,8 +517,9 @@ function pressKey(key) {
 
 // 키를 누르는 순간 (keydown)
 document.addEventListener("keydown", function (e) {
-  // 결과 화면에서 R(대문자 R도)을 누르면 처음부터 다시 시작한다
-  if (gameState === "gameover" && (e.key === "r" || e.key === "R")) {
+  // 언제든지(카운트다운·플레이 중·결과 화면) R(대문자 R도)을 누르면 처음부터 다시 시작한다
+  // e.repeat: 키를 꾹 눌러서 자동 반복으로 온 keydown이면 true → 꾹 누르고 있어도 재시작은 한 번만 된다
+  if ((e.key === "r" || e.key === "R") && !e.repeat) {
     resetGame();
     return;
   }
@@ -536,14 +541,29 @@ document.addEventListener("keyup", function (e) {
 function resetGame() {
   playerScore = 0;
   botScore = 0;
-  startTime = Date.now();
   notes = createNotes();
   spaceNoteY = lineY;            // Space 노트는 줄 맨 뒤에서 시작
   playerPose = "player";
   botPose = "bot";
   judgeTimer = 0;
   hitEffects = [];
-  gameState = "playing";
+  gameState = "countdown";       // 바로 시작하지 않고 3초 카운트다운부터
+  countdownStart = Date.now();
+}
+
+// 카운트다운 화면: 화면 정중앙에 남은 초(3 → 2 → 1)를 크게 띄운다
+function drawCountdown() {
+  const elapsed = (Date.now() - countdownStart) / 1000;          // 카운트다운 시작 후 흐른 초 (소수 포함)
+  const number = COUNTDOWN_SECONDS - Math.floor(elapsed);         // 3, 2, 1
+  const progress = elapsed - Math.floor(elapsed);                 // 이번 숫자가 뜬 뒤 흐른 정도 (0 → 1)
+  ctx.globalAlpha = 1 - progress * 0.6;                           // 숫자가 바뀔 때마다 진하게 떴다가 점점 흐려진다
+  ctx.fillStyle = "white";
+  ctx.font = "bold " + Math.round(140 - progress * 30) + "px sans-serif";  // 크게 떴다가 조금씩 작아진다
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";                                     // 글자 세로 가운데를 y에 맞춘다
+  ctx.fillText(number, canvas.width / 2, canvas.height / 2);       // 화면 정중앙 (400, 300)
+  ctx.textBaseline = "alphabetic";                                 // 다른 글자들을 위해 원래대로 되돌린다
+  ctx.globalAlpha = 1;
 }
 
 // 결과 화면: 무대 위에 어두운 막을 덮고, 가운데에 승패와 점수를 띄운다
@@ -582,7 +602,13 @@ function gameLoop() {
   for (const effect of hitEffects) effect.timer = effect.timer - 1;   // 이펙트 남은 시간을 줄이고
   hitEffects = hitEffects.filter((effect) => effect.timer > 0);      // 다 끝난 이펙트는 목록에서 뺀다
 
-  // 플레이 중일 때만: 시간 확인, 키 판정, 노트 이동 (결과 화면에서는 노트가 멈춘다)
+  // 카운트다운이 끝나면 플레이 시작: 이때부터 제한 시간을 잰다
+  if (gameState === "countdown" && Date.now() - countdownStart >= COUNTDOWN_SECONDS * 1000) {
+    gameState = "playing";
+    startTime = Date.now();
+  }
+
+  // 플레이 중일 때만: 시간 확인, 키 판정, 노트 이동 (카운트다운·결과 화면에서는 노트가 멈춘다)
   if (gameState === "playing") {
     if (remainingTime() === 0) {
       gameState = "gameover";                         // 제한 시간이 끝났다 → 결과 화면으로
@@ -630,7 +656,9 @@ function gameLoop() {
 
   // ③ 그리기: 바뀐 위치대로 무대 전체를 다시 그린다. 결과 화면이면 그 위에 결과를 덮는다
   draw();
-  if (gameState === "gameover") {
+  if (gameState === "countdown") {
+    drawCountdown();
+  } else if (gameState === "gameover") {
     drawResult();
   }
 

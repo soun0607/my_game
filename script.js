@@ -484,13 +484,13 @@ syncSlider.addEventListener("input", function () {
 syncSlider.addEventListener("change", function () {
   syncSlider.blur();
 });
-// − / + 버튼: 10ms씩
+// − / + 버튼: 1ms씩
 document.getElementById("sync-minus").addEventListener("click", function () {
-  setSync(syncMs - 10);
+  setSync(syncMs - 1);
   this.blur();   // 버튼에 포커스가 남으면 스페이스바가 버튼을 또 누르게 된다
 });
 document.getElementById("sync-plus").addEventListener("click", function () {
-  setSync(syncMs + 10);
+  setSync(syncMs + 1);
   this.blur();
 });
 

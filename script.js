@@ -1,7 +1,18 @@
+// ============================================================
+// ① 준비: 도화지(canvas)와 붓(ctx), 화면의 HTML 요소 가져오기
+// ============================================================
+
 const canvas = document.getElementById("game");  // 이름이 "game"인 도화지를 찾는다
 const ctx = canvas.getContext("2d");             // 그 도화지에 그릴 "붓"을 가져온다
 
-// ===== 위치와 크기 모음 (여기 숫자만 바꾸면 화면이 바뀐다) =====
+const syncSlider = document.getElementById("sync");          // 화면 아래 싱크 조절 막대 (index.html)
+const syncValue = document.getElementById("sync-value");     // 싱크 값 글자
+
+// ============================================================
+// ② 상태 변수와 설정값 (여기 숫자만 바꾸면 화면과 난이도가 바뀐다)
+// ============================================================
+
+// ----- 화면 배치: 레인과 판정선 -----
 
 // 레인: 가운데 세로 줄 4개
 const LANE_X = 280;        // 첫 번째 레인의 왼쪽 x
@@ -12,6 +23,13 @@ const LANE_COUNT = 4;      // 레인 개수 (← ↓ ↑ →)
 
 // 판정선: 노트가 여기 닿을 때 키를 누른다
 const JUDGE_Y = 500;
+
+const NOTE_SIZE = 50;      // 노트 그림 크기 (가로 = 세로)
+const TARGET_SIZE = Math.round(NOTE_SIZE * 1.1);  // 판정선 위 과녁(판정 박스) 그림 크기: 노트의 1.1배 = 55
+const NOTE_START_Y = LANE_TOP;                // 노트가 다시 나타나는 y (레인 맨 위)
+const NOTE_END_Y = LANE_TOP + LANE_HEIGHT;    // 노트가 사라지는 y (레인 맨 아래). 노트 윗부분까지 이 선을 넘으면 줄 맨 뒤로 돌아간다
+
+// ----- 노트 (배열): 간격, 개수, 처음 줄 세우기 -----
 
 // 노트: lane = 몇 번째 레인(0~3), y = 지금 세로 위치
 // y는 매 프레임 바뀌는 "상태"라서 let으로 만든다
@@ -27,17 +45,19 @@ const NOTE_COUNT = 11;     // 화살표 노트 개수. 레인을 다 채우고�
 // 줄 맨 뒤 위치는 Space 노트 자리로 쓰려고 lineY에 남겨 둔다
 const FIRST_NOTE_Y = 150 - 50;   // 첫 노트 위치 = 레인 맨 위(150) - 노트 크기(50). 레인 바로 위라 아직 안 보인다
 let lineY = FIRST_NOTE_Y;
-function createNotes() {
-  const list = [];
-  lineY = FIRST_NOTE_Y;
-  for (let i = 0; i < NOTE_COUNT; i++) {
-    list.push({ lane: Math.floor(Math.random() * 4), y: lineY });
-    lineY = lineY - noteGap;
-  }
-  return list;
-}
+
 let notes = createNotes();
-// ===== 입력과 판정 (5장) =====
+
+let spaceNoteY = lineY;    // Space 노트(레인 4개를 가로지르는 긴 막대)의 y. 줄 맨 뒤에서 시작한다
+
+const CHORD_CHANCE = 0.2;  // 동시 노트(두 키를 같이 눌러야 하는 노트)가 나올 확률 (0.2 = 20%)
+
+// 스테이지별 노트 속도 (속도 튜닝으로 정함): 초급 3 / 중급 4 / 상급 5
+const STAGE_SPEEDS = [3, 4, 5];
+let noteSpeed = STAGE_SPEEDS[0];   // 지금은 스테이지 1(초급). 노트가 한 프레임에 아래로 내려오는 거리
+
+// ----- 입력과 판정 (5장) -----
+
 const INPUT_MODE = "B";    // 조작 방식. "A" = 키 이벤트 안에서 바로 판정 (비교 실험용), "B" = keys에 기록하고 게임 루프에서 판정
 const JUDGE_RANGE = 50;    // 노트 가운데가 판정선에서 이 거리(px) 안에 있을 때 키를 누르면 맞춘 것
 // 조작키: 플레이테스트 피드백으로 방향키 대신 A S K L (왼손 두 손가락 + 오른손 두 손가락)
@@ -45,12 +65,12 @@ const KEY_TO_LANE = { a: 0, s: 1, k: 2, l: 3 };  // 키 → 레인 번호 (레�
 const GAME_KEYS = ["a", "s", "k", "l", " "];   // 게임에 쓰는 키 (" "는 스페이스바)
 const LANE_KEY_LABELS = ["A", "S", "K", "L"];  // 레인 아래에 보여 줄 키 이름
 
-// 키 이름을 소문자로 맞춘다 (Caps Lock이나 Shift 때문에 "A"로 와도 "a"로 처리). " " 같은 키는 그대로
-function normalizeKey(key) {
-  return key.length === 1 ? key.toLowerCase() : key;
-}
+const keys = {};           // 지금 눌려 있는 키를 적어 두는 메모장 (true = 눌림, false = 안 눌림)
+const prevKeys = {};       // 지난 프레임에 눌려 있던 키 (이번 프레임에 "새로" 눌렸는지 알아내는 데 쓴다)
+let playerPose = "player"; // 지금 내 캐릭터가 하고 있는 포즈 (그림 이름)
 
-// ===== 싱크 조절 (플레이테스트 피드백) =====
+// ----- 싱크 조절 (플레이테스트 피드백) -----
+
 // 싱크 = 판정 기준을 몇 ms 늦게(+) 또는 일찍(-) 잡을지. 화면보다 손이 늦거나 빠른 사람을 위해 맞춘다
 // +면 판정 기준이 판정선보다 아래로 내려가서 조금 늦게 눌러도 정확하게 판정된다
 const SYNC_MIN = -150;     // 싱크 막대 최소값 (ms)
@@ -62,14 +82,7 @@ try {
   syncMs = 0;              // 저장소를 못 쓰는 환경이면 0으로
 }
 
-// 판정 기준 y: 판정선 + 싱크만큼 노트가 움직이는 거리
-// (1초에 약 60프레임, 한 프레임에 noteSpeed px → 1ms에 noteSpeed × 60 / 1000 px)
-function judgeCenterY() {
-  return JUDGE_Y + (syncMs * noteSpeed * 60) / 1000;
-}
-const keys = {};           // 지금 눌려 있는 키를 적어 두는 메모장 (true = 눌림, false = 안 눌림)
-const prevKeys = {};       // 지난 프레임에 눌려 있던 키 (이번 프레임에 "새로" 눌렸는지 알아내는 데 쓴다)
-let playerPose = "player"; // 지금 내 캐릭터가 하고 있는 포즈 (그림 이름)
+// ----- 판정 등급과 이펙트 -----
 
 // 판정 등급: 정확도 = 판정선에 얼마나 가깝게 눌렀는가 (판정선 한가운데 100%, 판정 범위 끝 0%)
 const PERFECT_ACCURACY = 0.90;  // 90% 이상 → PERFECT
@@ -84,11 +97,176 @@ const JUDGE_COLORS = { PERFECT: "#ffd166", GREAT: "#8fd3ff", GOOD: "#b8f2a0", MI
 const HIT_EFFECT_FRAMES = 20;  // 맞췄을 때 터지는 이펙트가 보이는 시간 (프레임 수)
 let hitEffects = [];       // 지금 화면에 보이는 이펙트 목록. 하나 = { x, y, color, wide, timer }
 
-// ===== 충돌 판정 (6장) =====
+// ----- 충돌 판정 (6장)과 디버그 표시 (7장) -----
+
 let showHitbox = false;     // true면 판정 영역과 노트 판정 영역을 빨간 테두리로 그린다 (확인이 끝나면 false로 끈다)
-let showDebug = true;      // true면 왼쪽 위에 디버그 정보를 띄우고, 히트박스도 함께 그린다. D 키로 켜고 끈다 (제출할 때는 false)
+let showDebug = false;      // true면 왼쪽 위에 디버그 정보를 띄우고, 히트박스도 함께 그린다. D 키로 켜고 끈다 (제출할 때는 false)
 const NOTE_HITBOX_HEIGHT = 10;  // 노트 판정용 사각형의 세로 크기. 그림(50)보다 얇게, 노트 가운데에 둔다
                                 // (그림 전체로 판정하면 노트 끝만 걸쳐도 맞은 것이 되어서, 판정선에서 먼 노트가 맞는다)
+
+// ----- 게임 상태와 제한 시간 (6장) -----
+
+const TIME_LIMIT = 90;     // 제한 시간 (초)
+let gameState = "countdown"; // "countdown" = 시작 전 3초 카운트다운, "playing" = 플레이 중, "gameover" = 시간이 끝나서 결과 화면
+const COUNTDOWN_SECONDS = 3;   // 게임 시작 전 카운트다운 시간 (초). 스테이지와 상관없이 매 판 시작 때마다 나온다
+let countdownStart = Date.now(); // 카운트다운을 시작한 순간의 시각 (밀리초)
+// 일시정지: ESC로 "paused" 상태가 된다. 멈춘 동안 흐른 시간은 제한 시간·카운트다운에서 빼 준다
+let pausedFrom = "playing";   // 일시정지 전에 어떤 상태였는지 ("countdown" 또는 "playing")
+let pauseStart = 0;           // 일시정지를 시작한 순간의 시각 (밀리초)
+let startTime = Date.now(); // 게임을 시작한 순간의 시각 (밀리초). 프레임 수가 아니라 실제 흐른 시간을 재는 데 쓴다
+
+// ----- 점수 (6장) -----
+
+const JUDGE_SCORES = { PERFECT: 700, GREAT: 500, GOOD: 200, MISS: 0 };  // 판정별 점수 (기획서 5번)
+let playerScore = 0;       // 내 점수
+let botScore = 0;          // 봇 점수
+
+// 내 정확도 기록 (결과 화면에 보여 준다)
+// 정확도 = 노트마다 얻은 정확도(0~100%)의 평균. 누르지 않고 놓친 노트는 0%로 친다
+let accuracySum = 0;       // 맞춘 노트들의 정확도를 모두 더한 값 (0 ~ 1 단위)
+let gradeCounts = { PERFECT: 0, GREAT: 0, GOOD: 0, MISS: 0 };  // 판정별 개수
+let passedNotes = 0;       // 누르지 않고 레인 밖으로 지나간 노트 수 (MISS로 센다)
+
+// ----- 봇 (스테이지별 설정은 기획서 5번 스테이지 표) -----
+
+let botPose = "bot";      // 지금 봇이 하고 있는 포즈 (그림 이름). 봇이 노트를 맞출 때마다 바뀐다
+
+const STAGE_BOT_HIT_CHANCES = [0.9, 0.9, 1.0];   // 봇이 노트를 맞출 확률
+const STAGE_BOT_GRADE_RATIOS = [                  // 맞춘 노트의 판정 비율 [PERFECT, GREAT, GOOD]
+  [0.5, 0.3, 0.2],
+  [0.6, 0.3, 0.1],
+  [0.7, 0.2, 0.1],
+];
+let botHitChance = STAGE_BOT_HIT_CHANCES[0];     // 지금은 스테이지 1(초급)
+let botGradeRatio = STAGE_BOT_GRADE_RATIOS[0];
+
+// ----- 캐릭터, DJ, 관중, 색, 애니메이션 -----
+
+let frameCount = 0;        // 게임이 시작된 뒤 지난 프레임 수 (반짝이 깜빡임에 쓴다)
+
+// 캐릭터: (x, y)는 그림의 가운데 아래(발끝) 위치
+const PLAYER_X = 140;
+const BOT_X = 660;
+const DANCER_FEET_Y = 530; // 두 댄서의 발끝 y
+const DANCER_WIDTH = 134;  // 댄서 그림 가로 (원본 96의 1.4배)
+const DANCER_HEIGHT = 179; // 댄서 그림 세로 (원본 128의 1.4배)
+
+// DJ 부스: 위쪽 가운데
+const DJ_X = 400;          // DJ 가운데 x
+const DJ_Y = 0;            // DJ 그림 위쪽 y
+
+// 관중: 화면 맨 아래 한 줄
+const CROWD_Y = 515;       // 관중 그림 위쪽 y (아래가 화면 밖으로 잘려 상반신만 보인다)
+const CROWD_GAP = 74;      // 관중 사이 간격
+const CROWD_WIDTH = 90;    // 관중 그림 가로 (원본 96보다 조금 작게)
+const CROWD_HEIGHT = 120;  // 관중 그림 세로 (원본 128보다 조금 작게)
+const CROWD_JUMP = 10;     // 관중이 들썩일 때 올라가는 최대 높이
+const CROWD_JUMP_SPEED = 0.12; // 들썩이는 빠르기 (클수록 빠르다)
+
+// 색
+const STAGE_COLOR = "#2a1b3d";   // 무대 배경 (어두운 보라)
+
+// ----- 그림 파일 -----
+
+// 무료 에셋: Kenney (www.kenney.nl), CC0 라이선스. 출처는 README.md에 적어 두었다.
+const IMAGE_FILES = {
+  player: "assets/player.png",
+  player_left: "assets/player_left.png",     // ← 발차기
+  player_down: "assets/player_down.png",     // ↓ 웅크리기
+  player_up: "assets/player_up.png",         // ↑ 만세
+  player_right: "assets/player_right.png",   // → 점프
+  player_space: "assets/player_space.png",   // Space 팔 벌리기
+  bot: "assets/bot.png",
+  bot_left: "assets/bot_left.png",     // ← 발차기
+  bot_down: "assets/bot_down.png",     // ↓ 웅크리기
+  bot_up: "assets/bot_up.png",         // ↑ 만세
+  bot_right: "assets/bot_right.png",   // → 점프
+  bot_space: "assets/bot_space.png",   // Space 팔 벌리기
+  dj: "assets/dj.png",
+  crowd1: "assets/crowd1.png",
+  crowd2: "assets/crowd2.png",
+  crowd3: "assets/crowd3.png",
+  crowd4: "assets/crowd4.png",
+  note_space: "assets/note_space.png",
+  sparkle: "assets/sparkle.png",
+};
+const LANE_NAMES = ["left", "down", "up", "right"]; // 레인 순서대로 (← ↓ ↑ →)
+
+const images = {};         // 불러온 그림들 (이름 → 그림)
+let loadedCount = 0;       // 지금까지 다 불러온 그림 수
+const totalCount = Object.keys(IMAGE_FILES).length;   // 불러와야 할 그림 수
+
+// ============================================================
+// ③ 이벤트: 키보드와 싱크 조절 막대 (무슨 일이 생기면 할 일을 미리 등록)
+// ============================================================
+
+// 키를 누르는 순간 (keydown)
+document.addEventListener("keydown", function (e) {
+  // ESC: 카운트다운·플레이 중이면 일시정지, 일시정지 중이면 다시 계속
+  if (e.key === "Escape" && !e.repeat) {
+    togglePause();
+    return;
+  }
+  // 언제든지(카운트다운·플레이 중·결과 화면) R(대문자 R도)을 누르면 처음부터 다시 시작한다
+  // e.repeat: 키를 꾹 눌러서 자동 반복으로 온 keydown이면 true → 꾹 누르고 있어도 재시작은 한 번만 된다
+  if ((e.key === "r" || e.key === "R") && !e.repeat) {
+    resetGame();
+    return;
+  }
+  const key = normalizeKey(e.key);        // "A"로 와도 "a"로
+  // D: 디버그 표시 켜기/끄기 (꾹 눌러도 한 번만)
+  if (key === "d" && !e.repeat) {
+    showDebug = !showDebug;
+    return;
+  }
+  if (!GAME_KEYS.includes(key)) return;   // 게임에 안 쓰는 키는 무시
+  e.preventDefault();                    // 스페이스바로 페이지가 스크롤되지 않게 막는다
+  if (INPUT_MODE === "A" && gameState === "playing") {
+    pressKey(key);                       // 방식 A: 이벤트 안에서 바로 판정하고 포즈를 바꾼다
+  }
+  keys[key] = true;                      // 방식 B: "눌렸다"고 기록만 한다. 판정은 게임 루프가 한다
+});
+
+// 키에서 손을 떼는 순간 (keyup)
+document.addEventListener("keyup", function (e) {
+  keys[normalizeKey(e.key)] = false;     // "떼었다"고 기록한다
+});
+
+// 막대를 움직이면 값이 바뀐다. 다 움직이면 막대에서 포커스를 빼서, 게임 키가 막대로 가지 않게 한다
+syncSlider.addEventListener("input", function () {
+  setSync(Number(syncSlider.value));
+});
+syncSlider.addEventListener("change", function () {
+  syncSlider.blur();
+});
+// − / + 버튼: 1ms씩
+document.getElementById("sync-minus").addEventListener("click", function () {
+  setSync(syncMs - 1);
+  this.blur();   // 버튼에 포커스가 남으면 스페이스바가 버튼을 또 누르게 된다
+});
+document.getElementById("sync-plus").addEventListener("click", function () {
+  setSync(syncMs + 1);
+  this.blur();
+});
+
+// ============================================================
+// ④ 함수들
+// ============================================================
+
+// ----- 키와 판정 기준 -----
+
+// 키 이름을 소문자로 맞춘다 (Caps Lock이나 Shift 때문에 "A"로 와도 "a"로 처리). " " 같은 키는 그대로
+function normalizeKey(key) {
+  return key.length === 1 ? key.toLowerCase() : key;
+}
+
+// 판정 기준 y: 판정선 + 싱크만큼 노트가 움직이는 거리
+// (1초에 약 60프레임, 한 프레임에 noteSpeed px → 1ms에 noteSpeed × 60 / 1000 px)
+function judgeCenterY() {
+  return JUDGE_Y + (syncMs * noteSpeed * 60) / 1000;
+}
+
+// ----- 충돌 판정: 사각형 겹치기와 판정 영역 -----
 
 // 두 사각형이 겹치는지 검사한다. 사각형 = { x, y, width, height } (x, y는 왼쪽 위 꼭짓점)
 // 가로로도 겹치고 세로로도 겹치면 → 겹친 것이다
@@ -131,15 +309,7 @@ function spaceHitbox() {
   };
 }
 
-// ===== 게임 상태와 제한 시간 (6장) =====
-const TIME_LIMIT = 90;     // 제한 시간 (초)
-let gameState = "countdown"; // "countdown" = 시작 전 3초 카운트다운, "playing" = 플레이 중, "gameover" = 시간이 끝나서 결과 화면
-const COUNTDOWN_SECONDS = 3;   // 게임 시작 전 카운트다운 시간 (초). 스테이지와 상관없이 매 판 시작 때마다 나온다
-let countdownStart = Date.now(); // 카운트다운을 시작한 순간의 시각 (밀리초)
-// 일시정지: ESC로 "paused" 상태가 된다. 멈춘 동안 흐른 시간은 제한 시간·카운트다운에서 빼 준다
-let pausedFrom = "playing";   // 일시정지 전에 어떤 상태였는지 ("countdown" 또는 "playing")
-let pauseStart = 0;           // 일시정지를 시작한 순간의 시각 (밀리초)
-let startTime = Date.now(); // 게임을 시작한 순간의 시각 (밀리초). 프레임 수가 아니라 실제 흐른 시간을 재는 데 쓴다
+// ----- 시간과 정확도 -----
 
 // 남은 시간(초): 제한 시간 - 흐른 시간. Date.now()는 지금 시각(밀리초)이라 시작 시각을 빼고 1000으로 나누면 흐른 초
 // Math.floor로 소수점을 버린다. 0보다 작아지지 않게 Math.max로 막는다
@@ -151,19 +321,6 @@ function remainingTime() {
   return Math.max(0, TIME_LIMIT - elapsed);
 }
 
-let botPose = "bot";      // 지금 봇이 하고 있는 포즈 (그림 이름). 봇이 노트를 맞출 때마다 바뀐다
-
-// ===== 점수 (6장) =====
-const JUDGE_SCORES = { PERFECT: 700, GREAT: 500, GOOD: 200, MISS: 0 };  // 판정별 점수 (기획서 5번)
-let playerScore = 0;       // 내 점수
-let botScore = 0;          // 봇 점수
-
-// 내 정확도 기록 (결과 화면에 보여 준다)
-// 정확도 = 노트마다 얻은 정확도(0~100%)의 평균. 누르지 않고 놓친 노트는 0%로 친다
-let accuracySum = 0;       // 맞춘 노트들의 정확도를 모두 더한 값 (0 ~ 1 단위)
-let gradeCounts = { PERFECT: 0, GREAT: 0, GOOD: 0, MISS: 0 };  // 판정별 개수
-let passedNotes = 0;       // 누르지 않고 레인 밖으로 지나간 노트 수 (MISS로 센다)
-
 // 지금까지의 정확도(%) = 정확도 합 ÷ 전체 노트 수 × 100. 노트가 하나도 없으면 0
 function playerAccuracy() {
   const total = gradeCounts.PERFECT + gradeCounts.GREAT + gradeCounts.GOOD + gradeCounts.MISS;
@@ -171,91 +328,191 @@ function playerAccuracy() {
   return (accuracySum / total) * 100;
 }
 
-// 스테이지별 봇 설정 (기획서 5번 스테이지 표): 초급 / 중급 / 상급
-const STAGE_BOT_HIT_CHANCES = [0.9, 0.9, 1.0];   // 봇이 노트를 맞출 확률
-const STAGE_BOT_GRADE_RATIOS = [                  // 맞춘 노트의 판정 비율 [PERFECT, GREAT, GOOD]
-  [0.5, 0.3, 0.2],
-  [0.6, 0.3, 0.1],
-  [0.7, 0.2, 0.1],
-];
-let botHitChance = STAGE_BOT_HIT_CHANCES[0];     // 지금은 스테이지 1(초급)
-let botGradeRatio = STAGE_BOT_GRADE_RATIOS[0];
-let frameCount = 0;        // 게임이 시작된 뒤 지난 프레임 수 (반짝이 깜빡임에 쓴다)
-let spaceNoteY = lineY;    // Space 노트(레인 4개를 가로지르는 긴 막대)의 y. 줄 맨 뒤에서 시작한다
-const CHORD_CHANCE = 0.2;  // 동시 노트(두 키를 같이 눌러야 하는 노트)가 나올 확률 (0.2 = 20%)
-// 스테이지별 노트 속도 (속도 튜닝으로 정함): 초급 2 / 중급 4 / 상급 6
-const STAGE_SPEEDS = [3, 4, 5];
-let noteSpeed = STAGE_SPEEDS[0];   // 지금은 스테이지 1(초급). 노트가 한 프레임에 아래로 내려오는 거리
-const NOTE_SIZE = 50;      // 노트 그림 크기 (가로 = 세로)
-const TARGET_SIZE = Math.round(NOTE_SIZE * 1.1);  // 판정선 위 과녁(판정 박스) 그림 크기: 노트의 1.1배 = 55
-const NOTE_START_Y = LANE_TOP;                // 노트가 다시 나타나는 y (레인 맨 위)
-const NOTE_END_Y = LANE_TOP + LANE_HEIGHT;    // 노트가 사라지는 y (레인 맨 아래). 노트 윗부분까지 이 선을 넘으면 줄 맨 뒤로 돌아간다
+// ----- 노트 줄 세우기 -----
 
-// 캐릭터: (x, y)는 그림의 가운데 아래(발끝) 위치
-const PLAYER_X = 140;
-const BOT_X = 660;
-const DANCER_FEET_Y = 530; // 두 댄서의 발끝 y
-const DANCER_WIDTH = 134;  // 댄서 그림 가로 (원본 96의 1.4배)
-const DANCER_HEIGHT = 179; // 댄서 그림 세로 (원본 128의 1.4배)
+// 노트 NOTE_COUNT개를 줄 세워 새로 만든다 (위 ② 노트 설명 참고)
 
-// DJ 부스: 위쪽 가운데
-const DJ_X = 400;          // DJ 가운데 x
-const DJ_Y = 0;            // DJ 그림 위쪽 y
-
-// 관중: 화면 맨 아래 한 줄
-const CROWD_Y = 515;       // 관중 그림 위쪽 y (아래가 화면 밖으로 잘려 상반신만 보인다)
-const CROWD_GAP = 74;      // 관중 사이 간격
-const CROWD_WIDTH = 90;    // 관중 그림 가로 (원본 96보다 조금 작게)
-const CROWD_HEIGHT = 120;  // 관중 그림 세로 (원본 128보다 조금 작게)
-const CROWD_JUMP = 10;     // 관중이 들썩일 때 올라가는 최대 높이
-const CROWD_JUMP_SPEED = 0.12; // 들썩이는 빠르기 (클수록 빠르다)
-
-// 색
-const STAGE_COLOR = "#2a1b3d";   // 무대 배경 (어두운 보라)
-
-// ===== 그림 파일 불러오기 =====
-// 무료 에셋: Kenney (www.kenney.nl), CC0 라이선스. 출처는 README.md에 적어 두었다.
-const IMAGE_FILES = {
-  player: "assets/player.png",
-  player_left: "assets/player_left.png",     // ← 발차기
-  player_down: "assets/player_down.png",     // ↓ 웅크리기
-  player_up: "assets/player_up.png",         // ↑ 만세
-  player_right: "assets/player_right.png",   // → 점프
-  player_space: "assets/player_space.png",   // Space 팔 벌리기
-  bot: "assets/bot.png",
-  bot_left: "assets/bot_left.png",     // ← 발차기
-  bot_down: "assets/bot_down.png",     // ↓ 웅크리기
-  bot_up: "assets/bot_up.png",         // ↑ 만세
-  bot_right: "assets/bot_right.png",   // → 점프
-  bot_space: "assets/bot_space.png",   // Space 팔 벌리기
-  dj: "assets/dj.png",
-  crowd1: "assets/crowd1.png",
-  crowd2: "assets/crowd2.png",
-  crowd3: "assets/crowd3.png",
-  crowd4: "assets/crowd4.png",
-  note_space: "assets/note_space.png",
-  sparkle: "assets/sparkle.png",
-};
-const LANE_NAMES = ["left", "down", "up", "right"]; // 레인 순서대로 (← ↓ ↑ →)
-
-// 그림을 하나씩 불러오고, 전부 다 불러오면 draw()로 화면을 그린다
-// (다 불러오기 전에 그리면 아무것도 안 나온다)
-const images = {};
-let loadedCount = 0;
-const totalCount = Object.keys(IMAGE_FILES).length;
-for (const name in IMAGE_FILES) {
-  images[name] = new Image();
-  images[name].onload = function () {
-    loadedCount++;
-    if (loadedCount === totalCount) {
-      resetGame();                       // 그림을 다 불러온 순간부터 시간을 잰다
-      gameLoop();                        // 그림을 다 불러온 뒤에 게임 루프를 시작한다 (루프는 여기서 딱 한 번만 시작한다)
-    }
-  };
-  images[name].src = IMAGE_FILES[name];
+function createNotes() {
+  const list = [];
+  lineY = FIRST_NOTE_Y;
+  for (let i = 0; i < NOTE_COUNT; i++) {
+    list.push({ lane: Math.floor(Math.random() * 4), y: lineY });
+    lineY = lineY - noteGap;
+  }
+  return list;
 }
 
-// ===== 그리기 =====
+// 다시 나타날 노트의 y: 지금 가장 위에 있는 노트보다 noteGap만큼 더 위 (레인 맨 위보다 아래로는 안 간다)
+// 이렇게 하면 노트가 줄을 서서 내려오므로 서로 겹치지 않는다
+function nextSpawnY(except) {
+  let topY = Infinity;
+  for (const note of notes) {
+    if (note !== except && note.y < topY) topY = note.y;
+  }
+  if (except !== "space" && spaceNoteY < topY) topY = spaceNoteY;
+  return Math.min(NOTE_START_Y, topY - noteGap);
+}
+
+// 노트를 줄 맨 뒤(위쪽)로 돌려보내고, 레인(방향)을 무작위로 새로 고른다
+function respawnNote(note) {
+  // 동시 노트: 줄 맨 뒤 노트가 아직 레인 위에서 기다리는 중이고 혼자라면,
+  // CHORD_CHANCE 확률로 그 노트와 같은 높이 · 다른 레인에 놓는다 → 두 키를 같이 눌러야 한다
+  const last = lastNote(note);
+  if (last && last.y <= NOTE_START_Y && Math.random() < CHORD_CHANCE) {
+    note.y = last.y;
+    // 1~3칸 옆 레인을 고른다 (4로 나눈 나머지를 써서 0~3 안에서 돈다) → 절대 같은 레인이 안 된다
+    note.lane = (last.lane + 1 + Math.floor(Math.random() * (LANE_COUNT - 1))) % LANE_COUNT;
+    return;
+  }
+  note.y = nextSpawnY(note);
+  // Math.random()은 0 이상 1 미만의 아무 수 → 4를 곱하고 소수점을 버리면 0, 1, 2, 3 중 하나
+  note.lane = Math.floor(Math.random() * LANE_COUNT);
+}
+
+// 줄 맨 뒤(가장 위)에 있는 화살표 노트. 단, Space 노트가 더 위에 있거나, 이미 동시 노트(2개)이면 없음(null)
+function lastNote(except) {
+  const others = notes.filter((n) => n !== except);
+  const topY = Math.min(...others.map((n) => n.y));
+  if (spaceNoteY <= topY) return null;
+  const atTop = others.filter((n) => n.y === topY);
+  return atTop.length === 1 ? atTop[0] : null;
+}
+
+// ----- 싱크 값 바꾸기 -----
+
+// 싱크 값을 정하고, 막대·글자에 반영하고, 이 브라우저에 기억해 둔다
+function setSync(value) {
+  syncMs = Math.max(SYNC_MIN, Math.min(SYNC_MAX, value));   // 최소~최대 사이로 자른다
+  syncSlider.value = syncMs;
+  syncValue.textContent = (syncMs > 0 ? "+" : "") + syncMs + "ms";
+  try {
+    localStorage.setItem("syncMs", syncMs);
+  } catch (e) {
+    // 저장소를 못 쓰는 환경이면 기억만 못 할 뿐 게임은 그대로 된다
+  }
+}
+
+// ----- 판정과 점수: 봇 치기, 판정 띄우기, 키 눌렀을 때 -----
+
+// 봇이 판정선을 지나가는 노트 하나를 친다
+// botHitChance 확률로 맞추고, 맞추면 판정 비율대로 등급을 뽑아 점수를 얻고 그 방향 포즈를 취한다. 못 맞추면 MISS(0점)
+
+function botPlay(pose) {
+  if (Math.random() >= botHitChance) return;       // 놓쳤다 → 점수 없음, 포즈도 그대로
+  const roll = Math.random();                      // 0 ~ 1 사이 아무 수로 등급을 뽑는다
+  let grade;
+  if (roll < botGradeRatio[0]) {
+    grade = "PERFECT";                             // 0 ~ 0.3 → PERFECT (30%)
+  } else if (roll < botGradeRatio[0] + botGradeRatio[1]) {
+    grade = "GREAT";                               // 0.3 ~ 0.7 → GREAT (40%)
+  } else {
+    grade = "GOOD";                                // 나머지 → GOOD (30%)
+  }
+  botScore = botScore + JUDGE_SCORES[grade];
+  botPose = pose;
+}
+
+// 노트를 맞췄을 때: 판정 기준과의 거리로 정확도를 계산해 판정 등급을 정하고, 점수·개수·이펙트를 기록한다
+
+function showJudge(distance, effectX, wide) {
+  // 거리 0이면 1(100%), 판정 범위 끝이면 0(0%). 소수 계산 오차(0.30000000000000004 같은)를 없애려고 소수 둘째 자리에서 반올림한다
+  const accuracy = Math.round((1 - distance / JUDGE_RANGE) * 100) / 100;
+  if (accuracy >= PERFECT_ACCURACY) {
+    judgeText = "PERFECT";
+  } else if (accuracy >= GREAT_ACCURACY) {
+    judgeText = "GREAT";
+  } else if (accuracy >= MISS_ACCURACY) {
+    judgeText = "GOOD";
+  } else {
+    judgeText = "MISS";
+  }
+  judgeTimer = JUDGE_SHOW_FRAMES;                 // 지금부터 JUDGE_SHOW_FRAMES 동안 보여 준다
+  gradeCounts[judgeText] = gradeCounts[judgeText] + 1;       // 판정별 개수를 센다
+  accuracySum = accuracySum + Math.max(0, accuracy);         // 정확도를 더한다 (판정 범위 끝보다 멀면 0으로)
+  playerScore = playerScore + JUDGE_SCORES[judgeText];   // 판정별 점수를 내 점수에 더한다
+  // 맞춘 자리에 이펙트를 하나 추가한다
+  hitEffects.push({ x: effectX, y: JUDGE_Y, color: JUDGE_COLORS[judgeText], wide: wide, timer: HIT_EFFECT_FRAMES });
+}
+
+// 게임 키 하나를 새로 눌렀을 때 할 일: 그 방향 포즈를 취하고, 판정 영역과 겹치는 노트를 맞췄는지 확인한다
+
+function pressKey(key) {
+  if (key === " ") {
+    playerPose = "player_space";
+    // Space 노트 판정 사각형이 판정 영역(레인 전체 폭)과 겹치면 맞춘 것
+    if (checkCollision(spaceHitbox(), judgeBox())) {
+      const distance = Math.abs(spaceNoteY + 20 - judgeCenterY());   // 판정 등급은 판정 기준과의 거리로 정한다
+      showJudge(distance, LANE_X + (LANE_WIDTH * LANE_COUNT) / 2, true);
+      // 판정선을 지나기 전에 맞춰서 노트가 사라지면, 봇은 이 노트를 칠 기회가 없다 → 지금 봇도 치게 한다
+      if (spaceNoteY + 20 < JUDGE_Y) botPlay("bot_space");
+      spaceNoteY = nextSpawnY("space");
+    }
+    return;
+  }
+  const lane = KEY_TO_LANE[key];
+  playerPose = "player_" + LANE_NAMES[lane];
+  // 누른 레인의 판정 영역과 겹치는 노트 중에서 판정선에 가장 가까운 노트를 찾는다
+  // (판정 영역이 레인 한 칸 폭이라, 다른 레인의 노트는 가로로 안 겹쳐서 자동으로 빠진다)
+  // (판정 범위가 넓으면 같은 레인의 노트 두 개가 동시에 겹칠 수 있어서, 가까운 쪽을 맞춰야 판정이 정확하다)
+  const box = judgeBox(lane);
+  let closest = null;
+  let closestDistance = Infinity;
+  for (const note of notes) {
+    if (!checkCollision(noteHitbox(note), box)) continue;   // 판정 영역과 안 겹치면 건너뛴다
+    const distance = Math.abs(note.y + NOTE_SIZE / 2 - judgeCenterY());  // 노트 가운데가 판정 기준에서 몇 px 떨어져 있는가
+    if (distance < closestDistance) {
+      closest = note;
+      closestDistance = distance;
+    }
+  }
+  // 겹친 노트가 있으면 맞춘 것 → 판정을 띄우고 노트를 줄 맨 뒤로 돌려보낸다
+  // 한 번 누르면 노트 하나만 맞춘다
+  if (closest) {
+    showJudge(closestDistance, LANE_X + lane * LANE_WIDTH + LANE_WIDTH / 2, false);
+    // 봇은 노트가 판정선을 지날 때 친다. 그런데 내가 판정선보다 일찍 맞추면 노트가 바로 사라져서
+    // 봇이 그 노트를 칠 기회가 없어진다 → 아직 판정선을 안 지난 노트라면 지금 봇도 치게 한다
+    // (이미 판정선을 지난 노트는 봇이 벌써 쳤으므로 다시 치지 않는다. 그래서 노트마다 봇은 딱 한 번 친다)
+    if (closest.y + NOTE_SIZE / 2 < JUDGE_Y) botPlay("bot_" + LANE_NAMES[lane]);
+    respawnNote(closest);
+  }
+}
+
+// ----- 게임 흐름: 재시작, 일시정지 -----
+
+// 게임을 처음 상태로 되돌린다: 점수, 시간, 노트, 포즈, 판정 표시를 전부 처음 값으로
+// (재시작할 때 gameLoop()를 또 부르면 루프가 두 개가 되어 게임이 두 배로 빨라진다. 그래서 gameState만 바꾼다)
+function resetGame() {
+  playerScore = 0;
+  botScore = 0;
+  notes = createNotes();
+  spaceNoteY = lineY;            // Space 노트는 줄 맨 뒤에서 시작
+  playerPose = "player";
+  botPose = "bot";
+  judgeTimer = 0;
+  hitEffects = [];
+  accuracySum = 0;               // 정확도 기록도 처음부터
+  gradeCounts = { PERFECT: 0, GREAT: 0, GOOD: 0, MISS: 0 };
+  passedNotes = 0;
+  gameState = "countdown";       // 바로 시작하지 않고 3초 카운트다운부터
+  countdownStart = Date.now();
+}
+
+// 일시정지 켜기/끄기. 결과 화면에서는 아무 일도 안 한다
+function togglePause() {
+  if (gameState === "countdown" || gameState === "playing") {
+    pausedFrom = gameState;
+    pauseStart = Date.now();
+    gameState = "paused";
+  } else if (gameState === "paused") {
+    // 멈춰 있던 시간만큼 시작 시각을 뒤로 미룬다 → 남은 시간과 카운트다운이 멈춘 자리에서 이어진다
+    const pausedTime = Date.now() - pauseStart;
+    startTime = startTime + pausedTime;
+    countdownStart = countdownStart + pausedTime;
+    gameState = pausedFrom;
+  }
+}
+
+// ----- 그리기 -----
 
 // 키보드 키 모양(둥근 사각형 + 글자)을 그린다. 노트와 과녁에 쓴다
 // filled = true: 흰 키에 보라 글자 (노트) / false: 흰 테두리에 흰 글자 (과녁)
@@ -277,6 +534,8 @@ function drawKeyCap(x, y, size, letter, filled) {
   ctx.fillText(letter, x + size / 2, y + size / 2 + 1);
   ctx.textBaseline = "alphabetic";
 }
+
+// 무대 전체를 그린다: 배경 → DJ → 점수판 → 레인 → 판정선 → 노트 → 이펙트 → 캐릭터 → 관중 (뒤에 그린 것이 위에 덮인다)
 function draw() {
   // 1. 배경: 위는 어두운 보라, 아래로 갈수록 밝은 보라가 되는 그라데이션 무대
   // createLinearGradient(시작x, 시작y, 끝x, 끝y): 위(0)에서 아래(600)로 색이 바뀐다
@@ -345,7 +604,7 @@ function draw() {
     ctx.strokeRect(x, LANE_TOP, LANE_WIDTH, LANE_HEIGHT); // 레인 테두리
   }
 
-  // 5. 판정선 + 과녁: 판정선 위에 테두리만 있는 화살표 키 (노트가 여기에 겹치면 누른다)
+  // 5. 판정선 + 과녁: 판정선 위에 테두리만 있는 키 A S K L (노트가 여기에 겹치면 누른다)
   ctx.strokeStyle = "white";
   ctx.lineWidth = 3;
   ctx.beginPath();
@@ -373,7 +632,7 @@ function draw() {
     ctx.fillRect(LANE_X, JUDGE_Y - 6, LANE_WIDTH * LANE_COUNT, 12);
   }
 
-  // 6. 노트: 레인 위에 내려오는 중인 화살표 키 그림
+  // 6. 노트: 레인 위에 내려오는 중인 A S K L 키 모양
   // clip: 지금부터 그리는 것은 레인 사각형 안쪽만 보이게 한다 (레인 밖으로 나간 부분은 잘려서 안 보인다)
   // 그래서 노트가 레인 위에서 스르륵 들어오고, 레인 아래로 스르륵 사라진다
   ctx.save();                                            // clip을 걸기 전 상태를 저장해 둔다
@@ -389,7 +648,7 @@ function draw() {
   ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
   ctx.fillRect(LANE_X + 5, spaceNoteY + 14, LANE_WIDTH * LANE_COUNT - 10, 12);
   ctx.drawImage(images.note_space, DJ_X - 20, spaceNoteY, 40, 40);
-  // 7-0. 히트박스: showHitbox가 true면 노트 판정 사각형을 빨간 테두리로 그린다 (레인 안쪽만 보인다)
+  // 7-0. 히트박스: showHitbox나 showDebug가 true면 노트 판정 사각형을 빨간 테두리로 그린다 (레인 안쪽만 보인다)
   if (showHitbox || showDebug) {          // 디버그 표시를 켜면 히트박스도 함께 보인다
     ctx.strokeStyle = "red";
     ctx.lineWidth = 2;
@@ -411,7 +670,7 @@ function draw() {
     }
   }
 
-  // 7-0. 이펙트 2: 맞춘 자리에서 판정 색깔의 별과 고리가 퍼지며 사라진다
+  // 7-1. 이펙트 2: 맞춘 자리에서 판정 색깔의 별과 고리가 퍼지며 사라진다
   for (const effect of hitEffects) {
     const progress = 1 - effect.timer / HIT_EFFECT_FRAMES;   // 0(막 터짐) → 1(끝)
     ctx.globalAlpha = 1 - progress;                          // 점점 투명해진다
@@ -431,7 +690,7 @@ function draw() {
   }
   ctx.globalAlpha = 1;
 
-  // 7-1. 판정 글자: 레인 위쪽에 크게 띄우고, 시간이 지날수록 흐려진다
+  // 7-2. 판정 글자: 레인 위쪽에 크게 띄우고, 시간이 지날수록 흐려진다
   if (judgeTimer > 0) {
     ctx.globalAlpha = judgeTimer / JUDGE_SHOW_FRAMES;  // 남은 시간에 비례해서 투명해진다 (1 → 0)
     ctx.fillStyle = JUDGE_COLORS[judgeText];
@@ -461,222 +720,19 @@ function draw() {
   }
 }
 
-// ===== 싱크 조절 막대 (index.html의 화면 아래) =====
-const syncSlider = document.getElementById("sync");
-const syncValue = document.getElementById("sync-value");
-// 싱크 값을 정하고, 막대·글자에 반영하고, 이 브라우저에 기억해 둔다
-function setSync(value) {
-  syncMs = Math.max(SYNC_MIN, Math.min(SYNC_MAX, value));   // 최소~최대 사이로 자른다
-  syncSlider.value = syncMs;
-  syncValue.textContent = (syncMs > 0 ? "+" : "") + syncMs + "ms";
-  try {
-    localStorage.setItem("syncMs", syncMs);
-  } catch (e) {
-    // 저장소를 못 쓰는 환경이면 기억만 못 할 뿐 게임은 그대로 된다
-  }
-}
-syncSlider.min = SYNC_MIN;
-syncSlider.max = SYNC_MAX;
-setSync(syncMs);
-// 막대를 움직이면 값이 바뀐다. 다 움직이면 막대에서 포커스를 빼서, 게임 키가 막대로 가지 않게 한다
-syncSlider.addEventListener("input", function () {
-  setSync(Number(syncSlider.value));
-});
-syncSlider.addEventListener("change", function () {
-  syncSlider.blur();
-});
-// − / + 버튼: 1ms씩
-document.getElementById("sync-minus").addEventListener("click", function () {
-  setSync(syncMs - 1);
-  this.blur();   // 버튼에 포커스가 남으면 스페이스바가 버튼을 또 누르게 된다
-});
-document.getElementById("sync-plus").addEventListener("click", function () {
-  setSync(syncMs + 1);
-  this.blur();
-});
-
-// ===== 키 입력 =====
-
-// 다시 나타날 노트의 y: 지금 가장 위에 있는 노트보다 noteGap만큼 더 위 (레인 맨 위보다 아래로는 안 간다)
-// 이렇게 하면 노트가 줄을 서서 내려오므로 서로 겹치지 않는다
-function nextSpawnY(except) {
-  let topY = Infinity;
-  for (const note of notes) {
-    if (note !== except && note.y < topY) topY = note.y;
-  }
-  if (except !== "space" && spaceNoteY < topY) topY = spaceNoteY;
-  return Math.min(NOTE_START_Y, topY - noteGap);
-}
-
-// 노트를 줄 맨 뒤(위쪽)로 돌려보내고, 레인(방향)을 무작위로 새로 고른다
-function respawnNote(note) {
-  // 동시 노트: 줄 맨 뒤 노트가 아직 레인 위에서 기다리는 중이고 혼자라면,
-  // CHORD_CHANCE 확률로 그 노트와 같은 높이 · 다른 레인에 놓는다 → 두 키를 같이 눌러야 한다
-  const last = lastNote(note);
-  if (last && last.y <= NOTE_START_Y && Math.random() < CHORD_CHANCE) {
-    note.y = last.y;
-    // 1~3칸 옆 레인을 고른다 (4로 나눈 나머지를 써서 0~3 안에서 돈다) → 절대 같은 레인이 안 된다
-    note.lane = (last.lane + 1 + Math.floor(Math.random() * (LANE_COUNT - 1))) % LANE_COUNT;
-    return;
-  }
-  note.y = nextSpawnY(note);
-  // Math.random()은 0 이상 1 미만의 아무 수 → 4를 곱하고 소수점을 버리면 0, 1, 2, 3 중 하나
-  note.lane = Math.floor(Math.random() * LANE_COUNT);
-}
-
-// 줄 맨 뒤(가장 위)에 있는 화살표 노트. 단, Space 노트가 더 위에 있거나, 이미 동시 노트(2개)이면 없음(null)
-function lastNote(except) {
-  const others = notes.filter((n) => n !== except);
-  const topY = Math.min(...others.map((n) => n.y));
-  if (spaceNoteY <= topY) return null;
-  const atTop = others.filter((n) => n.y === topY);
-  return atTop.length === 1 ? atTop[0] : null;
-}
-
-// 게임 키 하나를 눌렀을 때 할 일: 그 방향 포즈를 취하고, 판정선 근처의 노트를 맞췄는지 확인한다
-// 노트를 맞췄을 때: 판정선과의 거리로 정확도를 계산해 판정 등급을 정하고, 화면에 띄울 준비를 한다
-// 봇이 판정선을 지나가는 노트 하나를 친다
-// botHitChance 확률로 맞추고, 맞추면 판정 비율대로 등급을 뽑아 점수를 얻고 그 방향 포즈를 취한다. 못 맞추면 MISS(0점)
-function botPlay(pose) {
-  if (Math.random() >= botHitChance) return;       // 놓쳤다 → 점수 없음, 포즈도 그대로
-  const roll = Math.random();                      // 0 ~ 1 사이 아무 수로 등급을 뽑는다
-  let grade;
-  if (roll < botGradeRatio[0]) {
-    grade = "PERFECT";                             // 0 ~ 0.3 → PERFECT (30%)
-  } else if (roll < botGradeRatio[0] + botGradeRatio[1]) {
-    grade = "GREAT";                               // 0.3 ~ 0.7 → GREAT (40%)
-  } else {
-    grade = "GOOD";                                // 나머지 → GOOD (30%)
-  }
-  botScore = botScore + JUDGE_SCORES[grade];
-  botPose = pose;
-}
-
-function showJudge(distance, effectX, wide) {
-  // 거리 0이면 1(100%), 판정 범위 끝이면 0(0%). 소수 계산 오차(0.30000000000000004 같은)를 없애려고 소수 둘째 자리에서 반올림한다
-  const accuracy = Math.round((1 - distance / JUDGE_RANGE) * 100) / 100;
-  if (accuracy >= PERFECT_ACCURACY) {
-    judgeText = "PERFECT";
-  } else if (accuracy >= GREAT_ACCURACY) {
-    judgeText = "GREAT";
-  } else if (accuracy >= MISS_ACCURACY) {
-    judgeText = "GOOD";
-  } else {
-    judgeText = "MISS";
-  }
-  judgeTimer = JUDGE_SHOW_FRAMES;                 // 지금부터 JUDGE_SHOW_FRAMES 동안 보여 준다
-  gradeCounts[judgeText] = gradeCounts[judgeText] + 1;       // 판정별 개수를 센다
-  accuracySum = accuracySum + Math.max(0, accuracy);         // 정확도를 더한다 (판정 범위 끝보다 멀면 0으로)
-  playerScore = playerScore + JUDGE_SCORES[judgeText];   // 판정별 점수를 내 점수에 더한다
-  // 맞춘 자리에 이펙트를 하나 추가한다
-  hitEffects.push({ x: effectX, y: JUDGE_Y, color: JUDGE_COLORS[judgeText], wide: wide, timer: HIT_EFFECT_FRAMES });
-}
-
-function pressKey(key) {
-  if (key === " ") {
-    playerPose = "player_space";
-    // Space 노트 판정 사각형이 판정 영역(레인 전체 폭)과 겹치면 맞춘 것
-    if (checkCollision(spaceHitbox(), judgeBox())) {
-      const distance = Math.abs(spaceNoteY + 20 - judgeCenterY());   // 판정 등급은 판정 기준과의 거리로 정한다
-      showJudge(distance, LANE_X + (LANE_WIDTH * LANE_COUNT) / 2, true);
-      // 판정선을 지나기 전에 맞춰서 노트가 사라지면, 봇은 이 노트를 칠 기회가 없다 → 지금 봇도 치게 한다
-      if (spaceNoteY + 20 < JUDGE_Y) botPlay("bot_space");
-      spaceNoteY = nextSpawnY("space");
-    }
-    return;
-  }
-  const lane = KEY_TO_LANE[key];
-  playerPose = "player_" + LANE_NAMES[lane];
-  // 누른 레인의 판정 영역과 겹치는 노트 중에서 판정선에 가장 가까운 노트를 찾는다
-  // (판정 영역이 레인 한 칸 폭이라, 다른 레인의 노트는 가로로 안 겹쳐서 자동으로 빠진다)
-  // (판정 범위가 넓으면 같은 레인의 노트 두 개가 동시에 겹칠 수 있어서, 가까운 쪽을 맞춰야 판정이 정확하다)
-  const box = judgeBox(lane);
-  let closest = null;
-  let closestDistance = Infinity;
-  for (const note of notes) {
-    if (!checkCollision(noteHitbox(note), box)) continue;   // 판정 영역과 안 겹치면 건너뛴다
-    const distance = Math.abs(note.y + NOTE_SIZE / 2 - judgeCenterY());  // 노트 가운데가 판정 기준에서 몇 px 떨어져 있는가
-    if (distance < closestDistance) {
-      closest = note;
-      closestDistance = distance;
-    }
-  }
-  // 겹친 노트가 있으면 맞춘 것 → 판정을 띄우고 노트를 줄 맨 뒤로 돌려보낸다
-  // 한 번 누르면 노트 하나만 맞춘다
-  if (closest) {
-    showJudge(closestDistance, LANE_X + lane * LANE_WIDTH + LANE_WIDTH / 2, false);
-    // 봇은 노트가 판정선을 지날 때 친다. 그런데 내가 판정선보다 일찍 맞추면 노트가 바로 사라져서
-    // 봇이 그 노트를 칠 기회가 없어진다 → 아직 판정선을 안 지난 노트라면 지금 봇도 치게 한다
-    // (이미 판정선을 지난 노트는 봇이 벌써 쳤으므로 다시 치지 않는다. 그래서 노트마다 봇은 딱 한 번 친다)
-    if (closest.y + NOTE_SIZE / 2 < JUDGE_Y) botPlay("bot_" + LANE_NAMES[lane]);
-    respawnNote(closest);
-  }
-}
-
-// 키를 누르는 순간 (keydown)
-document.addEventListener("keydown", function (e) {
-  // ESC: 카운트다운·플레이 중이면 일시정지, 일시정지 중이면 다시 계속
-  if (e.key === "Escape" && !e.repeat) {
-    togglePause();
-    return;
-  }
-  // 언제든지(카운트다운·플레이 중·결과 화면) R(대문자 R도)을 누르면 처음부터 다시 시작한다
-  // e.repeat: 키를 꾹 눌러서 자동 반복으로 온 keydown이면 true → 꾹 누르고 있어도 재시작은 한 번만 된다
-  if ((e.key === "r" || e.key === "R") && !e.repeat) {
-    resetGame();
-    return;
-  }
-  const key = normalizeKey(e.key);        // "A"로 와도 "a"로
-  // D: 디버그 표시 켜기/끄기 (꾹 눌러도 한 번만)
-  if (key === "d" && !e.repeat) {
-    showDebug = !showDebug;
-    return;
-  }
-  if (!GAME_KEYS.includes(key)) return;   // 게임에 안 쓰는 키는 무시
-  e.preventDefault();                    // 스페이스바로 페이지가 스크롤되지 않게 막는다
-  if (INPUT_MODE === "A" && gameState === "playing") {
-    pressKey(key);                       // 방식 A: 이벤트 안에서 바로 판정하고 포즈를 바꾼다
-  }
-  keys[key] = true;                      // 방식 B: "눌렸다"고 기록만 한다. 판정은 게임 루프가 한다
-});
-
-// 키에서 손을 떼는 순간 (keyup)
-document.addEventListener("keyup", function (e) {
-  keys[normalizeKey(e.key)] = false;     // "떼었다"고 기록한다
-});
-
-// 게임을 처음 상태로 되돌린다: 점수, 시간, 노트, 포즈, 판정 표시를 전부 처음 값으로
-// (재시작할 때 gameLoop()를 또 부르면 루프가 두 개가 되어 게임이 두 배로 빨라진다. 그래서 gameState만 바꾼다)
-function resetGame() {
-  playerScore = 0;
-  botScore = 0;
-  notes = createNotes();
-  spaceNoteY = lineY;            // Space 노트는 줄 맨 뒤에서 시작
-  playerPose = "player";
-  botPose = "bot";
-  judgeTimer = 0;
-  hitEffects = [];
-  accuracySum = 0;               // 정확도 기록도 처음부터
-  gradeCounts = { PERFECT: 0, GREAT: 0, GOOD: 0, MISS: 0 };
-  passedNotes = 0;
-  gameState = "countdown";       // 바로 시작하지 않고 3초 카운트다운부터
-  countdownStart = Date.now();
-}
-
 // 카운트다운 화면: 화면 정중앙에 남은 초(3 → 2 → 1)를 크게 띄운다
-// 일시정지 켜기/끄기. 결과 화면에서는 아무 일도 안 한다
-function togglePause() {
-  if (gameState === "countdown" || gameState === "playing") {
-    pausedFrom = gameState;
-    pauseStart = Date.now();
-    gameState = "paused";
-  } else if (gameState === "paused") {
-    // 멈춰 있던 시간만큼 시작 시각을 뒤로 미룬다 → 남은 시간과 카운트다운이 멈춘 자리에서 이어진다
-    const pausedTime = Date.now() - pauseStart;
-    startTime = startTime + pausedTime;
-    countdownStart = countdownStart + pausedTime;
-    gameState = pausedFrom;
-  }
+function drawCountdown() {
+  const elapsed = (Date.now() - countdownStart) / 1000;          // 카운트다운 시작 후 흐른 초 (소수 포함)
+  const number = COUNTDOWN_SECONDS - Math.floor(elapsed);         // 3, 2, 1
+  const progress = elapsed - Math.floor(elapsed);                 // 이번 숫자가 뜬 뒤 흐른 정도 (0 → 1)
+  ctx.globalAlpha = 1 - progress * 0.6;                           // 숫자가 바뀔 때마다 진하게 떴다가 점점 흐려진다
+  ctx.fillStyle = "white";
+  ctx.font = "bold " + Math.round(140 - progress * 30) + "px sans-serif";  // 크게 떴다가 조금씩 작아진다
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";                                     // 글자 세로 가운데를 y에 맞춘다
+  ctx.fillText(number, canvas.width / 2, canvas.height / 2);       // 화면 정중앙 (400, 300)
+  ctx.textBaseline = "alphabetic";                                 // 다른 글자들을 위해 원래대로 되돌린다
+  ctx.globalAlpha = 1;
 }
 
 // 일시정지 화면: 어두운 막 + 안내
@@ -692,47 +748,6 @@ function drawPause() {
   ctx.fillStyle = "#ffd166";
   ctx.font = "20px sans-serif";
   ctx.fillText("싱크: " + (syncMs > 0 ? "+" : "") + syncMs + "ms  (화면 아래 막대로 조절)", 400, 370);
-}
-
-// 디버그 표시: 왼쪽 위(내 점수 아래)에 지금 게임 상태 숫자들을 작은 글씨로 띄운다 (7장)
-function drawDebug() {
-  // 화면(레인 안)에 보이는 노트 개수: 레인 위쪽 끝과 아래쪽 끝 사이에 걸쳐 있는 노트만 센다
-  let visibleNotes = 0;
-  for (const note of notes) {
-    if (note.y + NOTE_SIZE > LANE_TOP && note.y < NOTE_END_Y) visibleNotes = visibleNotes + 1;
-  }
-  if (spaceNoteY + 40 > LANE_TOP && spaceNoteY < NOTE_END_Y) visibleNotes = visibleNotes + 1;   // Space 노트도 센다
-
-  const lines = [
-    "gameState: " + gameState,
-    "남은 시간: " + remainingTime() + "초",
-    "화면 노트: " + visibleNotes + "개",
-    "나: " + playerScore + " / 봇: " + botScore,
-    "싱크: " + (syncMs > 0 ? "+" : "") + syncMs + "ms",
-    "정확도: " + playerAccuracy().toFixed(1) + "%",
-  ];
-  ctx.fillStyle = "rgba(0, 0, 0, 0.55)";                 // 글자가 잘 보이게 반투명 검은 상자
-  ctx.fillRect(10, 48, 180, lines.length * 17 + 10);
-  ctx.fillStyle = "#b8f2a0";
-  ctx.font = "13px monospace";
-  ctx.textAlign = "left";
-  for (let i = 0; i < lines.length; i++) {
-    ctx.fillText(lines[i], 18, 66 + i * 17);
-  }
-}
-
-function drawCountdown() {
-  const elapsed = (Date.now() - countdownStart) / 1000;          // 카운트다운 시작 후 흐른 초 (소수 포함)
-  const number = COUNTDOWN_SECONDS - Math.floor(elapsed);         // 3, 2, 1
-  const progress = elapsed - Math.floor(elapsed);                 // 이번 숫자가 뜬 뒤 흐른 정도 (0 → 1)
-  ctx.globalAlpha = 1 - progress * 0.6;                           // 숫자가 바뀔 때마다 진하게 떴다가 점점 흐려진다
-  ctx.fillStyle = "white";
-  ctx.font = "bold " + Math.round(140 - progress * 30) + "px sans-serif";  // 크게 떴다가 조금씩 작아진다
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";                                     // 글자 세로 가운데를 y에 맞춘다
-  ctx.fillText(number, canvas.width / 2, canvas.height / 2);       // 화면 정중앙 (400, 300)
-  ctx.textBaseline = "alphabetic";                                 // 다른 글자들을 위해 원래대로 되돌린다
-  ctx.globalAlpha = 1;
 }
 
 // 결과 화면: 무대 위에 어두운 막을 덮고, 가운데에 승패와 점수를 띄운다
@@ -772,7 +787,37 @@ function drawResult() {
   ctx.fillText("R 키를 눌러 다시 시작", 400, 465);
 }
 
-// ===== 게임 루프: 지우기 → 계산 → 그리기를 1초에 약 60번 반복한다 =====
+// 디버그 표시: 왼쪽 위(내 점수 아래)에 지금 게임 상태 숫자들을 작은 글씨로 띄운다 (7장)
+function drawDebug() {
+  // 화면(레인 안)에 보이는 노트 개수: 레인 위쪽 끝과 아래쪽 끝 사이에 걸쳐 있는 노트만 센다
+  let visibleNotes = 0;
+  for (const note of notes) {
+    if (note.y + NOTE_SIZE > LANE_TOP && note.y < NOTE_END_Y) visibleNotes = visibleNotes + 1;
+  }
+  if (spaceNoteY + 40 > LANE_TOP && spaceNoteY < NOTE_END_Y) visibleNotes = visibleNotes + 1;   // Space 노트도 센다
+
+  const lines = [
+    "gameState: " + gameState,
+    "남은 시간: " + remainingTime() + "초",
+    "화면 노트: " + visibleNotes + "개",
+    "나: " + playerScore + " / 봇: " + botScore,
+    "싱크: " + (syncMs > 0 ? "+" : "") + syncMs + "ms",
+    "정확도: " + playerAccuracy().toFixed(1) + "%",
+  ];
+  ctx.fillStyle = "rgba(0, 0, 0, 0.55)";                 // 글자가 잘 보이게 반투명 검은 상자
+  ctx.fillRect(10, 48, 180, lines.length * 17 + 10);
+  ctx.fillStyle = "#b8f2a0";
+  ctx.font = "13px monospace";
+  ctx.textAlign = "left";
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], 18, 66 + i * 17);
+  }
+}
+
+// ============================================================
+// ⑤ 게임 루프: 지우기 → 계산 → 그리기를 1초에 약 60번 반복한다
+// ============================================================
+
 function gameLoop() {
   // ① 지우기: 이전 프레임에 그린 것을 모두 지운다
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -855,4 +900,26 @@ function gameLoop() {
 
   // ④ 다음 프레임에 gameLoop를 또 불러 달라고 브라우저에 부탁한다
   requestAnimationFrame(gameLoop);
+}
+
+// ============================================================
+// ⑥ 시동: 싱크 막대를 준비하고, 그림을 다 불러오면 게임 루프를 시작한다
+// ============================================================
+
+syncSlider.min = SYNC_MIN;
+syncSlider.max = SYNC_MAX;
+setSync(syncMs);
+
+// 그림을 하나씩 불러오고, 전부 다 불러오면 resetGame()으로 처음 상태를 만든 뒤 gameLoop()를 시작한다
+// (다 불러오기 전에 그리면 아무것도 안 나온다)
+for (const name in IMAGE_FILES) {
+  images[name] = new Image();
+  images[name].onload = function () {
+    loadedCount++;
+    if (loadedCount === totalCount) {
+      resetGame();                       // 그림을 다 불러온 순간부터 시간을 잰다
+      gameLoop();                        // 그림을 다 불러온 뒤에 게임 루프를 시작한다 (루프는 여기서 딱 한 번만 시작한다)
+    }
+  };
+  images[name].src = IMAGE_FILES[name];
 }

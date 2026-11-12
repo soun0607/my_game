@@ -106,12 +106,12 @@ let notes = createNotes();
 const INPUT_MODE = "B";    // 조작 방식. "A" = 키 이벤트 안에서 바로 판정 (비교 실험용), "B" = keys에 기록하고 게임 루프에서 판정
 const JUDGE_RANGE = 50;    // 노트 가운데가 판정선에서 이 거리(px) 안에 있을 때 키를 누르면 맞춘 것
 // 조작키: 플레이테스트 피드백으로 방향키 대신 A S K L (왼손 두 손가락 + 오른손 두 손가락)
-const KEY_TO_LANE = { a: 0, s: 1, k: 3, l: 2 };  // 키 → 레인 번호 (레인 순서: ← ↓ ↑ →)
+const KEY_TO_LANE = { a: 0, s: 1, k: 2, l: 3 };  // 키 → 레인 번호 (레인 순서: ← ↓ ↑ →)
 const GAME_KEYS = ["a", "s", "k", "l", " "];   // 게임에 쓰는 키 (" "는 스페이스바)
 const LANE_KEY_LABELS = ["A", "S", "K", "L"];  // 레인 아래에 보여 줄 키 이름
 
 // 키 이름을 소문자로 맞춘다 (Caps Lock이나 Shift 때문에 "A"로 와도 "a"로 처리). " " 같은 키는 그대로
-function normaliseKey(key) {
+function normalizeKey(key) {
   return key.length === 1 ? key.toLowerCase() : key;
 }
 
@@ -211,7 +211,7 @@ function remainingTime() {
   if (gameState === "countdown") return TIME_LIMIT;   // 카운트다운 중에는 아직 시간이 흐르지 않는다
   if (gameState === "paused" && pausedFrom === "countdown") return TIME_LIMIT;
   const now = gameState === "paused" ? pauseStart : Date.now();   // 일시정지 중에는 시간이 멈춰 있다
-  const elapsed = Math.floor((now - startTime) / 100);
+  const elapsed = Math.floor((now - startTime) / 1000);
   return Math.max(0, TIME_LIMIT - elapsed);
 }
 

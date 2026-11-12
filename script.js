@@ -86,6 +86,7 @@ let hitEffects = [];       // 지금 화면에 보이는 이펙트 목록. 하�
 
 // ===== 충돌 판정 (6장) =====
 let showHitbox = false;     // true면 판정 영역과 노트 판정 영역을 빨간 테두리로 그린다 (확인이 끝나면 false로 끈다)
+let showDebug = true;      // true면 왼쪽 위에 디버그 정보를 띄우고, 히트박스도 함께 그린다. D 키로 켜고 끈다 (제출할 때는 false)
 const NOTE_HITBOX_HEIGHT = 10;  // 노트 판정용 사각형의 세로 크기. 그림(50)보다 얇게, 노트 가운데에 둔다
                                 // (그림 전체로 판정하면 노트 끝만 걸쳐도 맞은 것이 되어서, 판정선에서 먼 노트가 맞는다)
 
@@ -389,7 +390,7 @@ function draw() {
   ctx.fillRect(LANE_X + 5, spaceNoteY + 14, LANE_WIDTH * LANE_COUNT - 10, 12);
   ctx.drawImage(images.note_space, DJ_X - 20, spaceNoteY, 40, 40);
   // 7-0. 히트박스: showHitbox가 true면 노트 판정 사각형을 빨간 테두리로 그린다 (레인 안쪽만 보인다)
-  if (showHitbox) {
+  if (showHitbox || showDebug) {          // 디버그 표시를 켜면 히트박스도 함께 보인다
     ctx.strokeStyle = "red";
     ctx.lineWidth = 2;
     for (const note of notes) {
@@ -401,7 +402,7 @@ function draw() {
   }
   ctx.restore();                                         // clip을 풀고 원래 상태로 돌아간다
   // 판정 영역은 레인 아래로 삐져나올 수 있어서 clip을 푼 뒤에 그린다 (전체 크기가 보이게)
-  if (showHitbox) {
+  if (showHitbox || showDebug) {          // 디버그 표시를 켜면 히트박스도 함께 보인다
     ctx.strokeStyle = "red";
     ctx.lineWidth = 2;
     for (let i = 0; i < LANE_COUNT; i++) {
@@ -626,6 +627,11 @@ document.addEventListener("keydown", function (e) {
     return;
   }
   const key = normalizeKey(e.key);        // "A"로 와도 "a"로
+  // D: 디버그 표시 켜기/끄기 (꾹 눌러도 한 번만)
+  if (key === "d" && !e.repeat) {
+    showDebug = !showDebug;
+    return;
+  }
   if (!GAME_KEYS.includes(key)) return;   // 게임에 안 쓰는 키는 무시
   e.preventDefault();                    // 스페이스바로 페이지가 스크롤되지 않게 막는다
   if (INPUT_MODE === "A" && gameState === "playing") {
@@ -686,6 +692,33 @@ function drawPause() {
   ctx.fillStyle = "#ffd166";
   ctx.font = "20px sans-serif";
   ctx.fillText("싱크: " + (syncMs > 0 ? "+" : "") + syncMs + "ms  (화면 아래 막대로 조절)", 400, 370);
+}
+
+// 디버그 표시: 왼쪽 위(내 점수 아래)에 지금 게임 상태 숫자들을 작은 글씨로 띄운다 (7장)
+function drawDebug() {
+  // 화면(레인 안)에 보이는 노트 개수: 레인 위쪽 끝과 아래쪽 끝 사이에 걸쳐 있는 노트만 센다
+  let visibleNotes = 0;
+  for (const note of notes) {
+    if (note.y + NOTE_SIZE > LANE_TOP && note.y < NOTE_END_Y) visibleNotes = visibleNotes + 1;
+  }
+  if (spaceNoteY + 40 > LANE_TOP && spaceNoteY < NOTE_END_Y) visibleNotes = visibleNotes + 1;   // Space 노트도 센다
+
+  const lines = [
+    "gameState: " + gameState,
+    "남은 시간: " + remainingTime() + "초",
+    "화면 노트: " + visibleNotes + "개",
+    "나: " + playerScore + " / 봇: " + botScore,
+    "싱크: " + (syncMs > 0 ? "+" : "") + syncMs + "ms",
+    "정확도: " + playerAccuracy().toFixed(1) + "%",
+  ];
+  ctx.fillStyle = "rgba(0, 0, 0, 0.55)";                 // 글자가 잘 보이게 반투명 검은 상자
+  ctx.fillRect(10, 48, 180, lines.length * 17 + 10);
+  ctx.fillStyle = "#b8f2a0";
+  ctx.font = "13px monospace";
+  ctx.textAlign = "left";
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], 18, 66 + i * 17);
+  }
 }
 
 function drawCountdown() {
@@ -815,6 +848,9 @@ function gameLoop() {
     drawPause();
   } else if (gameState === "gameover") {
     drawResult();
+  }
+  if (showDebug) {
+    drawDebug();                       // 디버그 정보는 카운트다운·일시정지·결과 화면 위에도 보이게 맨 마지막에 그린다
   }
 
   // ④ 다음 프레임에 gameLoop를 또 불러 달라고 브라우저에 부탁한다

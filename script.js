@@ -169,6 +169,28 @@ const CROWD_JUMP_SPEED = 0.12; // 들썩이는 빠르기 (클수록 빠르다)
 // 색
 const STAGE_COLOR = "#2a1b3d";   // 무대 배경 (어두운 보라)
 
+// ----- 소리 (8장) -----
+// 배경음악: Incompetech (Kevin MacLeod, CC BY 4.0) / 효과음: Mixkit (Mixkit License). 출처는 README.md에 적어 두었다
+const SOUND_FILES = {
+  bgm_menu: "assets/sounds/bgm_menu.mp3",       // 시작 화면
+  bgm_stage1: "assets/sounds/bgm_stage1.mp3",   // 초급 (101 BPM)
+  bgm_stage2: "assets/sounds/bgm_stage2.mp3",   // 중급 (115 BPM)
+  bgm_stage3: "assets/sounds/bgm_stage3.mp3",   // 상급 (140 BPM)
+  se_perfect: "assets/sounds/se_perfect.mp3",   // PERFECT 적중
+  se_hit: "assets/sounds/se_hit.mp3",           // GREAT · GOOD 적중
+  se_miss: "assets/sounds/se_miss.mp3",         // MISS
+  se_start: "assets/sounds/se_start.mp3",       // 시작 화면에서 키를 눌렀을 때
+  se_count: "assets/sounds/se_count.mp3",       // 카운트다운 3 · 2 · 1
+  se_clear: "assets/sounds/se_clear.mp3",       // 스테이지 승리 (관중 환호)
+  se_lose: "assets/sounds/se_lose.mp3",         // 패배
+};
+const BGM_VOLUME = 0.3;    // 배경음악 음량 (0 ~ 1). 효과음보다 작게
+const SE_VOLUME = 0.6;     // 효과음 음량
+const sounds = {};         // 불러온 소리들 (이름 → Audio). ⑥ 시동에서 채운다
+let currentBgm = null;     // 지금 나오는 배경음악 (없으면 null)
+let muted = false;         // M 키 음소거
+let lastCountNumber = 0;   // 카운트다운에서 마지막으로 삑 소리를 낸 숫자 (같은 숫자에서 두 번 안 나게)
+
 // ----- 그림 파일 -----
 
 // 무료 에셋: Kenney (www.kenney.nl), CC0 라이선스. 출처는 README.md에 적어 두었다.
@@ -217,6 +239,11 @@ document.addEventListener("keydown", function (e) {
     return;
   }
   const key = normalizeKey(e.key);        // "A"로 와도 "a"로
+  // M: 음소거 켜기/끄기 (시작 화면에서 눌러도 게임이 시작되지 않게 먼저 처리한다)
+  if (key === "m" && !e.repeat) {
+    toggleMute();
+    return;
+  }
   // D: 디버그 표시 켜기/끄기 (꾹 눌러도 한 번만)
   if (key === "d" && !e.repeat) {
     showDebug = !showDebug;
@@ -225,6 +252,7 @@ document.addEventListener("keydown", function (e) {
   // 시작 화면: 아무 키나 누르면 지금 스테이지를 시작한다 (3초 카운트다운부터)
   if (gameState === "start" && !e.repeat) {
     e.preventDefault();
+    playSound("se_start");
     resetGame();
     return;
   }
@@ -239,6 +267,12 @@ document.addEventListener("keydown", function (e) {
     pressKey(key);                       // 방식 A: 이벤트 안에서 바로 판정하고 포즈를 바꾼다
   }
   keys[key] = true;                      // 방식 B: "눌렸다"고 기록만 한다. 판정은 게임 루프가 한다
+});
+
+// 브라우저는 사용자가 클릭이나 키 입력을 하기 전에는 소리를 못 내게 막는다
+// 그래서 시작 화면에서는 화면을 클릭하면 메뉴 음악이 나오게 한다 (키를 누르면 바로 게임이 시작되므로)
+document.addEventListener("pointerdown", function () {
+  if (gameState === "start") playBgm("bgm_menu");
 });
 
 // 키에서 손을 떼는 순간 (keyup)
@@ -446,6 +480,10 @@ function showJudge(distance, effectX, wide) {
   playerScore = playerScore + JUDGE_SCORES[judgeText];   // 판정별 점수를 내 점수에 더한다
   // 맞춘 자리에 이펙트를 하나 추가한다
   hitEffects.push({ x: effectX, y: JUDGE_Y, color: JUDGE_COLORS[judgeText], wide: wide, timer: HIT_EFFECT_FRAMES });
+  // 판정마다 다른 효과음
+  if (judgeText === "PERFECT") playSound("se_perfect");
+  else if (judgeText === "MISS") playSound("se_miss");
+  else playSound("se_hit");
 }
 
 // 게임 키 하나를 새로 눌렀을 때 할 일: 그 방향 포즈를 취하고, 판정 영역과 겹치는 노트를 맞췄는지 확인한다
@@ -491,6 +529,43 @@ function pressKey(key) {
   }
 }
 
+// ----- 소리 재생 -----
+// 효과음 하나를 처음부터 재생한다 (빠르게 연속으로 나도 되감아서 다시 난다)
+function playSound(name) {
+  const sound = sounds[name];
+  if (muted || !sound || sound.broken) return;   // 음소거 중이거나 파일이 없으면 조용히 넘어간다
+  sound.currentTime = 0;
+  sound.play().catch(function () {});            // 브라우저가 막아도 게임은 멈추지 않게 에러를 무시한다
+}
+
+// 배경음악을 바꾼다. 이미 같은 곡이 나오고 있으면 그대로 둔다
+function playBgm(name) {
+  const bgm = sounds[name];
+  if (currentBgm === bgm && !bgm.paused) return;
+  stopBgm();
+  if (!bgm || bgm.broken) return;
+  currentBgm = bgm;
+  bgm.currentTime = 0;
+  if (!muted) bgm.play().catch(function () {});
+}
+
+// 배경음악을 멈추고 처음으로 되감는다
+function stopBgm() {
+  if (currentBgm) {
+    currentBgm.pause();
+    currentBgm.currentTime = 0;
+  }
+  currentBgm = null;
+}
+
+// M 키: 음소거를 켜고 끈다. 끄면 멈춰 있던 배경음악을 이어서 튼다
+function toggleMute() {
+  muted = !muted;
+  if (!currentBgm) return;
+  if (muted) currentBgm.pause();
+  else if (gameState !== "paused") currentBgm.play().catch(function () {});
+}
+
 // ----- 게임 흐름: 재시작, 일시정지 -----
 
 // 게임을 처음 상태로 되돌린다: 점수, 시간, 노트, 포즈, 판정 표시를 전부 처음 값으로
@@ -510,6 +585,8 @@ function resetGame() {
   passedNotes = 0;
   gameState = "countdown";       // 바로 시작하지 않고 3초 카운트다운부터
   countdownStart = Date.now();
+  stopBgm();                     // 카운트다운 동안은 음악을 멈춘다
+  lastCountNumber = 0;
 }
 
 // 지금 스테이지 번호(stage)에 맞게 노트 속도·간격과 봇 설정을 바꾼다
@@ -525,6 +602,7 @@ function goToStart() {
   stage = 0;
   resetGame();
   gameState = "start";
+  playBgm("bgm_menu");           // 시작 화면 음악 (처음 페이지를 열었을 때는 브라우저가 막아서, 화면을 클릭하면 나온다)
 }
 
 // 결과 화면에서 Enter를 눌렀을 때: 이겼으면 다음 스테이지, 상급까지 이겼으면 시작 화면으로, 졌거나 비겼으면 같은 스테이지 다시
@@ -547,12 +625,14 @@ function togglePause() {
     pausedFrom = gameState;
     pauseStart = Date.now();
     gameState = "paused";
+    if (currentBgm) currentBgm.pause();          // 음악도 멈춘다 (되감지 않고 그 자리에서)
   } else if (gameState === "paused") {
     // 멈춰 있던 시간만큼 시작 시각을 뒤로 미룬다 → 남은 시간과 카운트다운이 멈춘 자리에서 이어진다
     const pausedTime = Date.now() - pauseStart;
     startTime = startTime + pausedTime;
     countdownStart = countdownStart + pausedTime;
     gameState = pausedFrom;
+    if (currentBgm && !muted) currentBgm.play().catch(function () {});   // 멈춘 자리부터 이어서
   }
 }
 
@@ -902,15 +982,26 @@ function gameLoop() {
   hitEffects = hitEffects.filter((effect) => effect.timer > 0);      // 다 끝난 이펙트는 목록에서 뺀다
 
   // 카운트다운이 끝나면 플레이 시작: 이때부터 제한 시간을 잰다
+  // 카운트다운 숫자가 바뀔 때마다 삑 소리 (3 → 2 → 1)
+  if (gameState === "countdown") {
+    const countNumber = COUNTDOWN_SECONDS - Math.floor((Date.now() - countdownStart) / 1000);
+    if (countNumber >= 1 && countNumber !== lastCountNumber) {
+      playSound("se_count");
+      lastCountNumber = countNumber;
+    }
+  }
   if (gameState === "countdown" && Date.now() - countdownStart >= COUNTDOWN_SECONDS * 1000) {
     gameState = "playing";
     startTime = Date.now();
+    playBgm("bgm_stage" + (stage + 1));             // 스테이지 음악 시작
   }
 
   // 플레이 중일 때만: 시간 확인, 키 판정, 노트 이동 (카운트다운·결과 화면에서는 노트가 멈춘다)
   if (gameState === "playing") {
     if (remainingTime() === 0) {
       gameState = "gameover";                         // 제한 시간이 끝났다 → 결과 화면으로
+      stopBgm();
+      playSound(playerScore > botScore ? "se_clear" : "se_lose");   // 이기면 관중 환호, 지면 패배음
     }
 
     // 방식 B: keys 메모장을 보고 판정한다
@@ -971,6 +1062,13 @@ function gameLoop() {
   if (showDebug) {
     drawDebug();                       // 디버그 정보는 카운트다운·일시정지·결과 화면 위에도 보이게 맨 마지막에 그린다
   }
+  // 음소거 상태: 화면 오른쪽 아래 구석에 작게
+  ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+  ctx.fillRect(canvas.width - 128, canvas.height - 30, 120, 22);
+  ctx.fillStyle = muted ? "#ff6b6b" : "white";
+  ctx.font = "13px sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText(muted ? "음소거 켜짐 (M)" : "소리 켜짐 (M)", canvas.width - 14, canvas.height - 14);
 
   // ④ 다음 프레임에 gameLoop를 또 불러 달라고 브라우저에 부탁한다
   requestAnimationFrame(gameLoop);
@@ -983,6 +1081,18 @@ function gameLoop() {
 syncSlider.min = SYNC_MIN;
 syncSlider.max = SYNC_MAX;
 setSync(syncMs);
+
+// 소리 불러오기: 파일이 없거나 못 불러오면 broken 표시만 하고 게임은 그대로 돌아간다
+for (const name in SOUND_FILES) {
+  const audio = new Audio(SOUND_FILES[name]);
+  audio.preload = "auto";
+  audio.volume = name.startsWith("bgm") ? BGM_VOLUME : SE_VOLUME;
+  audio.loop = name.startsWith("bgm");             // 배경음악은 반복
+  audio.addEventListener("error", function () {
+    audio.broken = true;
+  });
+  sounds[name] = audio;
+}
 
 // 그림을 하나씩 불러오고, 전부 다 불러오면 시작 화면을 준비한 뒤 gameLoop()를 시작한다
 // (다 불러오기 전에 그리면 아무것도 안 나온다)

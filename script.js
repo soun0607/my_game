@@ -107,7 +107,10 @@ const NOTE_HITBOX_HEIGHT = 10;  // 노트 판정용 사각형의 세로 크기. 
 // ----- 게임 상태와 제한 시간 (6장) -----
 
 const TIME_LIMIT = 90;     // 제한 시간 (초)
-let gameState = "countdown"; // "countdown" = 시작 전 3초 카운트다운, "playing" = 플레이 중, "gameover" = 시간이 끝나서 결과 화면
+let gameState = "start";   // "start" = 시작 화면, "countdown" = 시작 전 3초 카운트다운, "playing" = 플레이 중, "paused" = 일시정지, "gameover" = 결과 화면
+// 스테이지 (8장): 0 = 초급, 1 = 중급, 2 = 상급. 이기면 다음 스테이지, 지면 같은 스테이지를 다시 한다
+let stage = 0;
+const STAGE_NAMES = ["초급", "중급", "상급"];
 const COUNTDOWN_SECONDS = 3;   // 게임 시작 전 카운트다운 시간 (초). 스테이지와 상관없이 매 판 시작 때마다 나온다
 let countdownStart = Date.now(); // 카운트다운을 시작한 순간의 시각 (밀리초)
 // 일시정지: ESC로 "paused" 상태가 된다. 멈춘 동안 흐른 시간은 제한 시간·카운트다운에서 빼 준다
@@ -219,6 +222,17 @@ document.addEventListener("keydown", function (e) {
     showDebug = !showDebug;
     return;
   }
+  // 시작 화면: 아무 키나 누르면 지금 스테이지를 시작한다 (3초 카운트다운부터)
+  if (gameState === "start" && !e.repeat) {
+    e.preventDefault();
+    resetGame();
+    return;
+  }
+  // 결과 화면에서 Enter: 이겼으면 다음 스테이지, 상급까지 이겼으면 시작 화면으로, 졌으면 같은 스테이지 다시
+  if (gameState === "gameover" && e.key === "Enter" && !e.repeat) {
+    nextAfterResult();
+    return;
+  }
   if (!GAME_KEYS.includes(key)) return;   // 게임에 안 쓰는 키는 무시
   e.preventDefault();                    // 스페이스바로 페이지가 스크롤되지 않게 막는다
   if (INPUT_MODE === "A" && gameState === "playing") {
@@ -314,7 +328,7 @@ function spaceHitbox() {
 // 남은 시간(초): 제한 시간 - 흐른 시간. Date.now()는 지금 시각(밀리초)이라 시작 시각을 빼고 1000으로 나누면 흐른 초
 // Math.floor로 소수점을 버린다. 0보다 작아지지 않게 Math.max로 막는다
 function remainingTime() {
-  if (gameState === "countdown") return TIME_LIMIT;   // 카운트다운 중에는 아직 시간이 흐르지 않는다
+  if (gameState === "start" || gameState === "countdown") return TIME_LIMIT;   // 시작 화면·카운트다운 중에는 아직 시간이 흐르지 않는다
   if (gameState === "paused" && pausedFrom === "countdown") return TIME_LIMIT;
   const now = gameState === "paused" ? pauseStart : Date.now();   // 일시정지 중에는 시간이 멈춰 있다
   const elapsed = Math.floor((now - startTime) / 1000);
@@ -482,6 +496,7 @@ function pressKey(key) {
 // 게임을 처음 상태로 되돌린다: 점수, 시간, 노트, 포즈, 판정 표시를 전부 처음 값으로
 // (재시작할 때 gameLoop()를 또 부르면 루프가 두 개가 되어 게임이 두 배로 빨라진다. 그래서 gameState만 바꾼다)
 function resetGame() {
+  applyStage();                  // 지금 스테이지의 노트 속도·간격과 봇 설정을 먼저 맞춘다 (노트 간격이 createNotes에 쓰인다)
   playerScore = 0;
   botScore = 0;
   notes = createNotes();
@@ -495,6 +510,35 @@ function resetGame() {
   passedNotes = 0;
   gameState = "countdown";       // 바로 시작하지 않고 3초 카운트다운부터
   countdownStart = Date.now();
+}
+
+// 지금 스테이지 번호(stage)에 맞게 노트 속도·간격과 봇 설정을 바꾼다
+function applyStage() {
+  noteSpeed = STAGE_SPEEDS[stage];
+  noteGap = STAGE_GAPS[stage];
+  botHitChance = STAGE_BOT_HIT_CHANCES[stage];
+  botGradeRatio = STAGE_BOT_GRADE_RATIOS[stage];
+}
+
+// 시작 화면으로 간다: 스테이지 1(초급)부터 다시
+function goToStart() {
+  stage = 0;
+  resetGame();
+  gameState = "start";
+}
+
+// 결과 화면에서 Enter를 눌렀을 때: 이겼으면 다음 스테이지, 상급까지 이겼으면 시작 화면으로, 졌거나 비겼으면 같은 스테이지 다시
+function nextAfterResult() {
+  if (playerScore > botScore) {
+    if (stage < STAGE_NAMES.length - 1) {
+      stage = stage + 1;
+      resetGame();
+    } else {
+      goToStart();
+    }
+  } else {
+    resetGame();
+  }
 }
 
 // 일시정지 켜기/끄기. 결과 화면에서는 아무 일도 안 한다
@@ -588,7 +632,7 @@ function draw() {
   ctx.fillText("봇: " + botScore, 780, 35);        // 오른쪽 위: 봇 점수 (x=780에서 끝나게)
   ctx.font = "16px sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText("STAGE 1 초급", 400, 128);          // 가운데: 스테이지
+  ctx.fillText("STAGE " + (stage + 1) + " " + STAGE_NAMES[stage], 400, 128);   // 가운데: 스테이지
   ctx.fillText("남은 시간: " + remainingTime(), 400, 146); // 가운데: 남은 시간
 
   // 4. 레인 4개: 위는 투명, 아래로 갈수록 진해지는 칸 + 테두리
@@ -708,7 +752,7 @@ function draw() {
   ctx.font = "16px sans-serif";
   ctx.textAlign = "center";
   ctx.fillText("나", PLAYER_X, dancerTop + 30);    // 머리 위 이름표 (그림 위쪽에 빈 공간이 있어 조금 내린다)
-  ctx.fillText("초급 봇", BOT_X, dancerTop + 30);
+  ctx.fillText(STAGE_NAMES[stage] + " 봇", BOT_X, dancerTop + 30);
 
   // 9. 관중: 무대를 바라보는 뒷모습 4종을 번갈아 한 줄로 세운다
   const crowd = [images.crowd1, images.crowd2, images.crowd3, images.crowd4];
@@ -757,8 +801,10 @@ function drawResult() {
   ctx.textAlign = "center";
   let resultText = "패배…";
   let resultColor = "#8fd3ff";
-  if (playerScore > botScore) {
-    resultText = "승리!";
+  const won = playerScore > botScore;
+  const lastStage = stage === STAGE_NAMES.length - 1;
+  if (won) {
+    resultText = lastStage ? "최종 우승!" : "승리!";      // 상급까지 이기면 최종 우승
     resultColor = "#ffd166";
   } else if (playerScore === botScore) {
     resultText = "무승부";                        // 점수가 같을 때
@@ -784,7 +830,33 @@ function drawResult() {
   }
   ctx.fillStyle = "white";
   ctx.font = "18px sans-serif";
-  ctx.fillText("R 키를 눌러 다시 시작", 400, 465);
+  // 다음에 할 수 있는 것 안내
+  let nextText = "Enter: 다시 도전     R: 다시 시작";
+  if (won && !lastStage) nextText = "Enter: 다음 스테이지 (" + STAGE_NAMES[stage + 1] + ")     R: 이 스테이지 다시";
+  if (won && lastStage) nextText = "Enter: 처음 화면으로     R: 상급 다시";
+  ctx.fillText(nextText, 400, 465);
+}
+
+// 시작 화면: 무대 위에 어두운 막을 덮고, 제목·목표·조작법·시작 안내를 띄운다 (8장)
+function drawStart() {
+  ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffd166";
+  ctx.font = "bold 52px sans-serif";
+  ctx.fillText("오늘 밤 주인공은 나야나", 400, 210);
+  ctx.fillStyle = "white";
+  ctx.font = "22px sans-serif";
+  ctx.fillText("90초 동안 봇보다 높은 점수를 얻으면 승리! 초급 → 중급 → 상급", 400, 275);
+  ctx.font = "18px sans-serif";
+  ctx.fillText("A S K L + Space: 노트 치기     ESC: 일시정지     R: 다시 시작", 400, 320);
+  ctx.fillText("판정이 늦거나 빠르면 화면 아래 싱크 막대로 맞춰 주세요", 400, 350);
+  // "아무 키나 눌러 시작"은 깜빡인다: Math.sin으로 투명도가 0.3 ~ 1 사이를 오간다
+  ctx.globalAlpha = 0.65 + 0.35 * Math.sin(frameCount * 0.08);
+  ctx.fillStyle = "#ffd166";
+  ctx.font = "bold 24px sans-serif";
+  ctx.fillText("아무 키나 눌러 시작", 400, 430);
+  ctx.globalAlpha = 1;
 }
 
 // 디버그 표시: 왼쪽 위(내 점수 아래)에 지금 게임 상태 숫자들을 작은 글씨로 띄운다 (7장)
@@ -887,7 +959,9 @@ function gameLoop() {
 
   // ③ 그리기: 바뀐 위치대로 무대 전체를 다시 그린다. 결과 화면이면 그 위에 결과를 덮는다
   draw();
-  if (gameState === "countdown") {
+  if (gameState === "start") {
+    drawStart();
+  } else if (gameState === "countdown") {
     drawCountdown();
   } else if (gameState === "paused") {
     drawPause();
@@ -910,14 +984,14 @@ syncSlider.min = SYNC_MIN;
 syncSlider.max = SYNC_MAX;
 setSync(syncMs);
 
-// 그림을 하나씩 불러오고, 전부 다 불러오면 resetGame()으로 처음 상태를 만든 뒤 gameLoop()를 시작한다
+// 그림을 하나씩 불러오고, 전부 다 불러오면 시작 화면을 준비한 뒤 gameLoop()를 시작한다
 // (다 불러오기 전에 그리면 아무것도 안 나온다)
 for (const name in IMAGE_FILES) {
   images[name] = new Image();
   images[name].onload = function () {
     loadedCount++;
     if (loadedCount === totalCount) {
-      resetGame();                       // 그림을 다 불러온 순간부터 시간을 잰다
+      goToStart();                       // 그림을 다 불러오면 시작 화면부터 (스테이지 1)
       gameLoop();                        // 그림을 다 불러온 뒤에 게임 루프를 시작한다 (루프는 여기서 딱 한 번만 시작한다)
     }
   };

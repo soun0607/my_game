@@ -26,35 +26,37 @@ const JUDGE_Y = 500;
 
 const NOTE_SIZE = 50;      // 노트 그림 크기 (가로 = 세로)
 const TARGET_SIZE = Math.round(NOTE_SIZE * 1.1);  // 판정선 위 과녁(판정 박스) 그림 크기: 노트의 1.1배 = 55
-const NOTE_START_Y = LANE_TOP;                // 노트가 다시 나타나는 y (레인 맨 위)
 const NOTE_END_Y = LANE_TOP + LANE_HEIGHT;    // 노트가 사라지는 y (레인 맨 아래). 노트 윗부분까지 이 선을 넘으면 줄 맨 뒤로 돌아간다
 
 // ----- 노트 (배열): 간격, 개수, 처음 줄 세우기 -----
 
-// 노트: lane = 몇 번째 레인(0~3), y = 지금 세로 위치
-// y는 매 프레임 바뀌는 "상태"라서 let으로 만든다
-// 스테이지별 노트 간격 (노트 사이의 세로 거리, px): 초급 120 / 중급 90 / 상급 70
-// 간격이 넓을수록 노트가 드문드문 나온다
-const STAGE_GAPS = [120, 90, 70];
-let noteGap = STAGE_GAPS[0];   // 지금은 스테이지 1(초급)
+// 노트: lane = 몇 번째 레인(0~3), time = 판정선에 닿아야 하는 시각(음악 시작 후 몇 초), y = 지금 세로 위치
+// 노트는 음악 박자(BPM)에 맞춰 "언제 판정선에 닿을지(time)"가 먼저 정해지고,
+// y는 매 프레임 "지금 음악이 몇 초째인가"로 계산한다 → 음악과 노트가 어긋나지 않는다 (8장 BPM 맞추기)
+const STAGE_BPMS = [101, 115, 140];          // 스테이지별 배경음악 BPM (README 에셋 표의 곡과 같다)
+// 노트 사이 간격(박자)의 최소값과 최대값: 이 사이에서 무작위로 골라서, 간격이 너무 일정하지 않게 한다
+// 간격은 GAP_STEP_BEATS(반 박) 단위로만 고른다 → 노트가 언제나 음악 박자(반 박 칸) 위에 떨어진다
+const STAGE_MIN_GAP_BEATS = [1, 1, 0.5];     // 가장 촘촘할 때: 초급 1박 / 중급 1박 / 상급 반 박
+const STAGE_MAX_GAP_BEATS = [2, 1.5, 1.5];   // 가장 띄엄띄엄할 때: 초급 2박 / 중급 1.5박 / 상급 1.5박
+const GAP_STEP_BEATS = 0.5;                  // 간격을 고르는 단위 (반 박)
+let bpm = STAGE_BPMS[0];                     // 지금 스테이지의 BPM
+let minGapBeats = STAGE_MIN_GAP_BEATS[0];   // 지금 스테이지의 최소 간격(박자)
+let maxGapBeats = STAGE_MAX_GAP_BEATS[0];   // 지금 스테이지의 최대 간격(박자)
+const SONG_OFFSET = 0;     // 곡의 첫 박이 몇 초에 시작하는가. 노트가 음악보다 계속 빠르거나 늦게 느껴지면 이 값을 조금씩 바꾼다
 const NOTE_COUNT = 11;     // 화살표 노트 개수. 레인을 다 채우고도 위에서 기다리는 노트가 남을 만큼 넉넉하게
-                           // (모자라면 줄 맨 뒤가 비어서 동시 노트가 만들어지지 않는다. 기준: 노트가 지나가는 거리 430 ÷ 가장 좁은 간격(70) + 4)
+                           // (모자라면 줄 맨 뒤가 비어서 동시 노트가 만들어지지 않는다)
 
-// 노트 NOTE_COUNT개를 레인 바로 위(안 보이는 곳)부터 위쪽으로 noteGap 간격으로 줄 세워 만든다 (게임 시작·재시작 때 쓴다)
-// 처음에는 레인이 비어 있다가, 카운트다운이 끝나면 첫 노트부터 레인 위에서 내려온다
-// 줄 맨 뒤 위치는 Space 노트 자리로 쓰려고 lineY에 남겨 둔다
-const FIRST_NOTE_Y = 150 - 50;   // 첫 노트 위치 = 레인 맨 위(150) - 노트 크기(50). 레인 바로 위라 아직 안 보인다
-let lineY = FIRST_NOTE_Y;
-
-let notes = createNotes();
-
-let spaceNoteY = lineY;    // Space 노트(레인 4개를 가로지르는 긴 막대)의 y. 줄 맨 뒤에서 시작한다
+let notes = [];            // 화살표 노트들 (시작할 때 createNotes()로 채운다)
+let spaceNoteTime = 0;     // Space 노트가 판정선에 닿아야 하는 시각(초)
+let spaceNoteY = -1000;    // Space 노트(레인 4개를 가로지르는 긴 막대)의 y. 매 프레임 spaceNoteTime으로 계산한다
+let nextSlotTime = 0;      // 다음 노트가 들어갈 박자 칸의 시각(초). 노트를 하나 배치할 때마다 한 칸씩 뒤로 간다
+let lastSlot = null;       // 마지막으로 배치한 박자 칸 { time, lane, count(그 칸의 노트 수), space(Space 노트인가) }
 
 const CHORD_CHANCE = 0.2;  // 동시 노트(두 키를 같이 눌러야 하는 노트)가 나올 확률 (0.2 = 20%)
 
-// 스테이지별 노트 속도 (속도 튜닝으로 정함): 초급 3 / 중급 4 / 상급 5
-const STAGE_SPEEDS = [3, 4, 5];
-let noteSpeed = STAGE_SPEEDS[0];   // 지금은 스테이지 1(초급). 노트가 한 프레임에 아래로 내려오는 거리
+// 스테이지별 노트 속도 (속도 튜닝으로 정함): 초급 4 / 중급 4 / 상급 5 (1초 60프레임 기준 한 프레임에 내려오는 px)
+const STAGE_SPEEDS = [4, 4, 5];
+let noteSpeed = STAGE_SPEEDS[0];   // 지금은 스테이지 1(초급). 1초에 noteSpeed × 60 px 내려온다
 
 // ----- 입력과 판정 (5장) -----
 
@@ -85,8 +87,8 @@ try {
 // ----- 판정 등급과 이펙트 -----
 
 // 판정 등급: 정확도 = 판정선에 얼마나 가깝게 눌렀는가 (판정선 한가운데 100%, 판정 범위 끝 0%)
-const PERFECT_ACCURACY = 0.90;  // 90% 이상 → PERFECT
-const GREAT_ACCURACY = 0.70;    // 70% 이상 ~ 90% 미만 → GREAT
+const PERFECT_ACCURACY = 0.85;  // 85% 이상 → PERFECT
+const GREAT_ACCURACY = 0.70;    // 70% 이상 ~ 85% 미만 → GREAT
 const MISS_ACCURACY = 0.20;     // 20% 이상 ~ 70% 미만 → GOOD, 20% 미만 → MISS (너무 일찍/늦게 눌렀다)
 const JUDGE_SHOW_FRAMES = 40;   // 판정 글자를 화면에 띄워 두는 시간 (프레임 수, 60 = 약 1초)
 let judgeText = "";        // 지금 띄울 판정 글자 ("PERFECT" / "GREAT" / "GOOD" / "MISS")
@@ -111,6 +113,9 @@ let gameState = "start";   // "start" = 시작 화면, "countdown" = 시작 전 
 // 스테이지 (8장): 0 = 초급, 1 = 중급, 2 = 상급. 이기면 다음 스테이지, 지면 같은 스테이지를 다시 한다
 let stage = 0;
 const STAGE_NAMES = ["초급", "중급", "상급"];
+// [플레이테스트용] true면 시작 화면에서 1 / 2 / 3 키로 초급 / 중급 / 상급을 바로 고를 수 있다
+// 플레이테스트가 끝나면 false로 바꾸면 꺼진다 (코드를 아예 지우려면 "[플레이테스트용]"으로 검색되는 부분 3곳을 지운다)
+const STAGE_SELECT_FOR_TEST = true;
 const COUNTDOWN_SECONDS = 3;   // 게임 시작 전 카운트다운 시간 (초). 스테이지와 상관없이 매 판 시작 때마다 나온다
 let countdownStart = Date.now(); // 카운트다운을 시작한 순간의 시각 (밀리초)
 // 일시정지: ESC로 "paused" 상태가 된다. 멈춘 동안 흐른 시간은 제한 시간·카운트다운에서 빼 준다
@@ -134,11 +139,11 @@ let passedNotes = 0;       // 누르지 않고 레인 밖으로 지나간 노트
 
 let botPose = "bot";      // 지금 봇이 하고 있는 포즈 (그림 이름). 봇이 노트를 맞출 때마다 바뀐다
 
-const STAGE_BOT_HIT_CHANCES = [0.9, 0.9, 1.0];   // 봇이 노트를 맞출 확률
+const STAGE_BOT_HIT_CHANCES = [0.9, 0.94, 1.0];   // 봇이 노트를 맞출 확률
 const STAGE_BOT_GRADE_RATIOS = [                  // 맞춘 노트의 판정 비율 [PERFECT, GREAT, GOOD]
+  [0.7, 0.3, 0.0],
+  [0.78, 0.22, 0.0],
   [0.5, 0.3, 0.2],
-  [0.6, 0.3, 0.1],
-  [0.7, 0.2, 0.1],
 ];
 let botHitChance = STAGE_BOT_HIT_CHANCES[0];     // 지금은 스테이지 1(초급)
 let botGradeRatio = STAGE_BOT_GRADE_RATIOS[0];
@@ -247,6 +252,13 @@ document.addEventListener("keydown", function (e) {
   // D: 디버그 표시 켜기/끄기 (꾹 눌러도 한 번만)
   if (key === "d" && !e.repeat) {
     showDebug = !showDebug;
+    return;
+  }
+  // [플레이테스트용] 시작 화면에서 1 / 2 / 3: 그 스테이지를 바로 시작한다
+  if (STAGE_SELECT_FOR_TEST && gameState === "start" && ["1", "2", "3"].includes(e.key) && !e.repeat) {
+    stage = Number(e.key) - 1;
+    playSound("se_start");
+    resetGame();                   // resetGame이 고른 스테이지의 설정(applyStage)을 적용한다
     return;
   }
   // 시작 화면: 아무 키나 누르면 지금 스테이지를 시작한다 (3초 카운트다운부터)
@@ -378,52 +390,84 @@ function playerAccuracy() {
 
 // ----- 노트 줄 세우기 -----
 
-// 노트 NOTE_COUNT개를 줄 세워 새로 만든다 (위 ② 노트 설명 참고)
+// 노트가 1초에 내려오는 거리(px)
+function notePxPerSec() {
+  return noteSpeed * 60;
+}
 
+// 다음 노트까지의 시간(초): 최소~최대 간격(박자) 사이에서 반 박 단위로 무작위로 고른 뒤, 한 박자 시간(60 ÷ BPM)을 곱한다
+// 예) 초급 1 ~ 2.5박 → 1, 1.5, 2, 2.5박 중 하나
+function randomGapTime() {
+  const choices = Math.round((maxGapBeats - minGapBeats) / GAP_STEP_BEATS) + 1;   // 고를 수 있는 간격 개수
+  const gapBeats = minGapBeats + Math.floor(Math.random() * choices) * GAP_STEP_BEATS;
+  return (60 / bpm) * gapBeats;
+}
+
+// 지금 음악이 몇 초째인가: 배경음악이 재생 중이면 음악의 재생 위치를 그대로 쓴다 (음악과 노트가 같은 시계를 쓴다)
+// 음악이 아직 안 나오거나 파일이 없으면 Date.now()로 잰 플레이 시간을 쓴다 (일시정지 중에는 멈춘 시각 기준)
+function songTime() {
+  if (currentBgm && !currentBgm.broken && currentBgm.currentTime > 0) return currentBgm.currentTime;
+  const now = gameState === "paused" ? pauseStart : Date.now();
+  return (now - startTime) / 1000;
+}
+
+// 판정선에 닿을 시각(time)인 노트가 지금(t) 있어야 할 y. 판정선까지 남은 시간 × 속도만큼 위에 있다
+function noteYAt(time, t, halfHeight) {
+  return JUDGE_Y - halfHeight - (time - t) * notePxPerSec();
+}
+
+// 다음 박자 칸 하나를 받아 온다
+function takeSlot() {
+  const time = nextSlotTime;
+  nextSlotTime = nextSlotTime + randomGapTime();
+  return time;
+}
+
+// 노트 NOTE_COUNT개와 Space 노트 하나를 박자 칸에 차례로 배치해 새로 만든다 (게임 시작·재시작 때 쓴다)
+// 첫 노트는 레인 맨 위 바깥에서 출발해 판정선까지 내려오는 시간이 지난 뒤의 박자에 둔다 → 처음엔 레인이 비어 있다가 위에서 내려온다
 function createNotes() {
+  const travelTime = (JUDGE_Y - LANE_TOP + NOTE_SIZE / 2) / notePxPerSec();   // 레인 맨 위에서 판정선까지 걸리는 시간
+  const beat = 60 / bpm;
+  nextSlotTime = SONG_OFFSET + Math.ceil(travelTime / beat) * beat;            // 그 시간 뒤의 첫 박
+  lastSlot = null;
   const list = [];
-  lineY = FIRST_NOTE_Y;
   for (let i = 0; i < NOTE_COUNT; i++) {
-    list.push({ lane: Math.floor(Math.random() * 4), y: lineY });
-    lineY = lineY - noteGap;
+    const lane = Math.floor(Math.random() * LANE_COUNT);
+    const time = takeSlot();
+    list.push({ lane: lane, time: time, y: noteYAt(time, 0, NOTE_SIZE / 2) });
+    lastSlot = { time: time, lane: lane, count: 1, space: false };
   }
+  spaceNoteTime = takeSlot();                      // Space 노트는 줄 맨 뒤 칸에서 시작
+  spaceNoteY = noteYAt(spaceNoteTime, 0, 20);
+  lastSlot = { time: spaceNoteTime, space: true };
   return list;
 }
 
-// 다시 나타날 노트의 y: 지금 가장 위에 있는 노트보다 noteGap만큼 더 위 (레인 맨 위보다 아래로는 안 간다)
-// 이렇게 하면 노트가 줄을 서서 내려오므로 서로 겹치지 않는다
-function nextSpawnY(except) {
-  let topY = Infinity;
-  for (const note of notes) {
-    if (note !== except && note.y < topY) topY = note.y;
-  }
-  if (except !== "space" && spaceNoteY < topY) topY = spaceNoteY;
-  return Math.min(NOTE_START_Y, topY - noteGap);
-}
-
-// 노트를 줄 맨 뒤(위쪽)로 돌려보내고, 레인(방향)을 무작위로 새로 고른다
+// 노트를 줄 맨 뒤(다음 박자 칸)로 보내고, 레인(방향)을 무작위로 새로 고른다
 function respawnNote(note) {
-  // 동시 노트: 줄 맨 뒤 노트가 아직 레인 위에서 기다리는 중이고 혼자라면,
-  // CHORD_CHANCE 확률로 그 노트와 같은 높이 · 다른 레인에 놓는다 → 두 키를 같이 눌러야 한다
-  const last = lastNote(note);
-  if (last && last.y <= NOTE_START_Y && Math.random() < CHORD_CHANCE) {
-    note.y = last.y;
+  // 동시 노트: 마지막 칸이 아직 레인 위에서 기다리는 화살표 노트 하나뿐이면,
+  // CHORD_CHANCE 확률로 그 칸(같은 박자) · 다른 레인에 놓는다 → 두 키를 같이 눌러야 한다
+  const waitingAbove = lastSlot && noteYAt(lastSlot.time, songTime(), NOTE_SIZE / 2) < LANE_TOP - NOTE_SIZE;
+  if (waitingAbove && !lastSlot.space && lastSlot.count === 1 && Math.random() < CHORD_CHANCE) {
+    note.time = lastSlot.time;
     // 1~3칸 옆 레인을 고른다 (4로 나눈 나머지를 써서 0~3 안에서 돈다) → 절대 같은 레인이 안 된다
-    note.lane = (last.lane + 1 + Math.floor(Math.random() * (LANE_COUNT - 1))) % LANE_COUNT;
+    note.lane = (lastSlot.lane + 1 + Math.floor(Math.random() * (LANE_COUNT - 1))) % LANE_COUNT;
+    lastSlot.count = 2;
+    note.y = noteYAt(note.time, songTime(), NOTE_SIZE / 2);   // 위치도 바로 새 시각에 맞춘다 (안 맞추면 같은 프레임에서 옛 위치로 또 맞을 수 있다)
     return;
   }
-  note.y = nextSpawnY(note);
+  note.time = takeSlot();
   // Math.random()은 0 이상 1 미만의 아무 수 → 4를 곱하고 소수점을 버리면 0, 1, 2, 3 중 하나
   note.lane = Math.floor(Math.random() * LANE_COUNT);
+  lastSlot = { time: note.time, lane: note.lane, count: 1, space: false };
+  note.y = noteYAt(note.time, songTime(), NOTE_SIZE / 2);     // 위치도 바로 새 시각에 맞춘다
 }
 
-// 줄 맨 뒤(가장 위)에 있는 화살표 노트. 단, Space 노트가 더 위에 있거나, 이미 동시 노트(2개)이면 없음(null)
-function lastNote(except) {
-  const others = notes.filter((n) => n !== except);
-  const topY = Math.min(...others.map((n) => n.y));
-  if (spaceNoteY <= topY) return null;
-  const atTop = others.filter((n) => n.y === topY);
-  return atTop.length === 1 ? atTop[0] : null;
+// Space 노트를 줄 맨 뒤(다음 박자 칸)로 보낸다
+function respawnSpaceNote() {
+  spaceNoteTime = takeSlot();
+  lastSlot = { time: spaceNoteTime, space: true };
+  spaceNoteY = noteYAt(spaceNoteTime, songTime(), 20);        // 위치도 바로 새 시각에 맞춘다
 }
 
 // ----- 싱크 값 바꾸기 -----
@@ -497,7 +541,7 @@ function pressKey(key) {
       showJudge(distance, LANE_X + (LANE_WIDTH * LANE_COUNT) / 2, true);
       // 판정선을 지나기 전에 맞춰서 노트가 사라지면, 봇은 이 노트를 칠 기회가 없다 → 지금 봇도 치게 한다
       if (spaceNoteY + 20 < JUDGE_Y) botPlay("bot_space");
-      spaceNoteY = nextSpawnY("space");
+      respawnSpaceNote();
     }
     return;
   }
@@ -546,7 +590,7 @@ function playBgm(name) {
   if (!bgm || bgm.broken) return;
   currentBgm = bgm;
   bgm.currentTime = 0;
-  if (!muted) bgm.play().catch(function () {});
+  bgm.play().catch(function () {});              // 음소거 중이어도 재생은 한다 (소리만 꺼져 있다)
 }
 
 // 배경음악을 멈추고 처음으로 되감는다
@@ -558,12 +602,11 @@ function stopBgm() {
   currentBgm = null;
 }
 
-// M 키: 음소거를 켜고 끈다. 끄면 멈춰 있던 배경음악을 이어서 튼다
+// M 키: 음소거를 켜고 끈다
+// 음악을 멈추지 않고 소리만 끈다 → 노트가 음악 재생 위치를 시계로 쓰기 때문에, 음악이 멈추면 노트도 멈춰 버린다
 function toggleMute() {
   muted = !muted;
-  if (!currentBgm) return;
-  if (muted) currentBgm.pause();
-  else if (gameState !== "paused") currentBgm.play().catch(function () {});
+  for (const name in sounds) sounds[name].muted = muted;
 }
 
 // ----- 게임 흐름: 재시작, 일시정지 -----
@@ -574,8 +617,7 @@ function resetGame() {
   applyStage();                  // 지금 스테이지의 노트 속도·간격과 봇 설정을 먼저 맞춘다 (노트 간격이 createNotes에 쓰인다)
   playerScore = 0;
   botScore = 0;
-  notes = createNotes();
-  spaceNoteY = lineY;            // Space 노트는 줄 맨 뒤에서 시작
+  notes = createNotes();         // 노트와 Space 노트를 박자 칸에 새로 배치한다
   playerPose = "player";
   botPose = "bot";
   judgeTimer = 0;
@@ -592,7 +634,9 @@ function resetGame() {
 // 지금 스테이지 번호(stage)에 맞게 노트 속도·간격과 봇 설정을 바꾼다
 function applyStage() {
   noteSpeed = STAGE_SPEEDS[stage];
-  noteGap = STAGE_GAPS[stage];
+  bpm = STAGE_BPMS[stage];
+  minGapBeats = STAGE_MIN_GAP_BEATS[stage];
+  maxGapBeats = STAGE_MAX_GAP_BEATS[stage];
   botHitChance = STAGE_BOT_HIT_CHANCES[stage];
   botGradeRatio = STAGE_BOT_GRADE_RATIOS[stage];
 }
@@ -632,7 +676,7 @@ function togglePause() {
     startTime = startTime + pausedTime;
     countdownStart = countdownStart + pausedTime;
     gameState = pausedFrom;
-    if (currentBgm && !muted) currentBgm.play().catch(function () {});   // 멈춘 자리부터 이어서
+    if (currentBgm) currentBgm.play().catch(function () {});   // 멈춘 자리부터 이어서
   }
 }
 
@@ -937,6 +981,13 @@ function drawStart() {
   ctx.font = "bold 24px sans-serif";
   ctx.fillText("아무 키나 눌러 시작", 400, 430);
   ctx.globalAlpha = 1;
+  // [플레이테스트용] 스테이지 바로 고르기 안내
+  if (STAGE_SELECT_FOR_TEST) {
+    ctx.fillStyle = "#8fd3ff";
+    ctx.font = "16px sans-serif";
+    ctx.fillText("[테스트용] 1: 초급   2: 중급   3: 상급 바로 시작", 400, 470);
+  }
+  ctx.globalAlpha = 1;
 }
 
 // 디버그 표시: 왼쪽 위(내 점수 아래)에 지금 게임 상태 숫자들을 작은 글씨로 띄운다 (7장)
@@ -954,6 +1005,8 @@ function drawDebug() {
     "화면 노트: " + visibleNotes + "개",
     "나: " + playerScore + " / 봇: " + botScore,
     "싱크: " + (syncMs > 0 ? "+" : "") + syncMs + "ms",
+    "BPM: " + bpm + " / 간격 " + minGapBeats + "~" + maxGapBeats + "박",
+    "음악 시각: " + songTime().toFixed(2) + "초",
     "정확도: " + playerAccuracy().toFixed(1) + "%",
   ];
   ctx.fillStyle = "rgba(0, 0, 0, 0.55)";                 // 글자가 잘 보이게 반투명 검은 상자
@@ -1018,18 +1071,19 @@ function gameLoop() {
       if (!anyKeyHeld) playerPose = "player";       // 모든 키에서 손을 떼면 기본 포즈로 돌아온다
     }
 
-    // 먼저 모든 노트를 똑같이 내린 다음, 빠져나간 노트를 처리한다
-    // (내리면서 바로 처리하면 아직 안 내린 노트와 높이가 어긋나 간격이 틀어진다)
+    // 먼저 모든 노트를 지금 음악 시각에 맞는 위치로 옮긴 다음, 빠져나간 노트를 처리한다
+    // (옮기면서 바로 처리하면 아직 안 옮긴 노트와 시각이 어긋난다)
+    const t = songTime();
     for (const note of notes) {
-      const before = note.y + NOTE_SIZE / 2;         // 내리기 전 노트 가운데
-      note.y = note.y + noteSpeed;
+      const before = note.y + NOTE_SIZE / 2;         // 옮기기 전 노트 가운데
+      note.y = noteYAt(note.time, t, NOTE_SIZE / 2); // 판정선까지 남은 시간만큼 위에 있다
       // 노트 가운데가 이번 프레임에 판정선을 지나갔으면, 봇이 그 노트를 친다
       if (before < JUDGE_Y && note.y + NOTE_SIZE / 2 >= JUDGE_Y) {
         botPlay("bot_" + LANE_NAMES[note.lane]);
       }
     }
     const spaceBefore = spaceNoteY + 20;
-    spaceNoteY = spaceNoteY + noteSpeed;
+    spaceNoteY = noteYAt(spaceNoteTime, t, 20);
     if (spaceBefore < JUDGE_Y && spaceNoteY + 20 >= JUDGE_Y) {
       botPlay("bot_space");                          // Space 노트가 판정선을 지나가면 봇이 친다 (맞추면 팔 벌리기 포즈)
     }
@@ -1044,7 +1098,7 @@ function gameLoop() {
     if (spaceNoteY > NOTE_END_Y) {               // Space 노트도 레인 밖으로 다 나가면
       gradeCounts.MISS = gradeCounts.MISS + 1;
       passedNotes = passedNotes + 1;
-      spaceNoteY = nextSpawnY("space");
+      respawnSpaceNote();
     }
   } // if (gameState === "playing") 끝
 

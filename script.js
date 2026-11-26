@@ -961,10 +961,15 @@ function drawCountdown() {
   ctx.globalAlpha = 1;
 }
 
+// 화면 전체를 반투명 검은 막으로 덮는다 (일시정지·결과·시작 화면이 같이 쓴다). darkness = 0 ~ 1, 클수록 어둡다
+function drawDimOverlay(darkness) {
+  ctx.fillStyle = "rgba(0, 0, 0, " + darkness + ")";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
 // 일시정지 화면: 어두운 막 + 안내
 function drawPause() {
-  ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawDimOverlay(0.6);
   ctx.textAlign = "center";
   ctx.fillStyle = "white";
   ctx.font = "bold 60px sans-serif";
@@ -978,8 +983,7 @@ function drawPause() {
 
 // 결과 화면: 무대 위에 어두운 막을 덮고, 가운데에 승패와 점수를 띄운다
 function drawResult() {
-  ctx.fillStyle = "rgba(0, 0, 0, 0.6)";           // 반투명 검은 막
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawDimOverlay(0.6);                            // 반투명 검은 막
   ctx.textAlign = "center";
   let resultText = "패배…";
   let resultColor = "#8fd3ff";
@@ -1021,8 +1025,7 @@ function drawResult() {
 
 // 시작 화면: 무대 위에 어두운 막을 덮고, 제목·목표·조작법·시작 안내를 띄운다 (8장)
 function drawStart() {
-  ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawDimOverlay(0.65);
   ctx.textAlign = "center";
   ctx.fillStyle = "#ffd166";
   ctx.font = "bold 52px sans-serif";

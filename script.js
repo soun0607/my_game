@@ -22,10 +22,14 @@ const LANE_HEIGHT = 380;   // 레인의 높이 (150 + 380 = 530까지)
 const LANE_COUNT = 4;      // 레인 개수 (← ↓ ↑ →)
 
 // 판정선: 노트가 여기 닿을 때 키를 누른다
-const JUDGE_Y = 500;
+const JUDGE_Y = 472;       // 판정선 y: A S K L 과녁 바로 위쪽 테두리에 놓는다 (판정 범위 띠·노트 타이밍·히트박스가 모두 이 선을 기준으로 따라 움직인다)
+const TARGET_Y = 500;      // A S K L 과녁(판정 박스) 그림의 가운데 y. 과녁 그림은 이 자리에 그대로 둔다
 
 const NOTE_SIZE = 50;      // 노트 그림 크기 (가로 = 세로)
-const TARGET_SIZE = Math.round(NOTE_SIZE * 1.1);  // 판정선 위 과녁(판정 박스) 그림 크기: 노트의 1.1배 = 55
+const TARGET_SIZE = Math.round(NOTE_SIZE * 1.1 * 0.8);  // A S K L 과녁(판정 박스) 그림 크기: 55의 0.8배 = 44
+const NOTE_BAR_HEIGHT = 14;   // 노트(가로 흰 사각형 막대)의 두께(px). 막대는 노트 자리(NOTE_SIZE) 가운데에 그린다
+const KEY_GUIDE_SHOW_SECONDS = 0;   // 카운트다운이 끝나고 A S K L 과녁이 더 보이는 시간(초). 0이면 카운트다운이 끝나자마자 서서히 사라지기 시작한다
+const KEY_GUIDE_FADE_SECONDS = 1;   // 사라지는 데 걸리는 시간(초)
 const NOTE_END_Y = LANE_TOP + LANE_HEIGHT;    // 노트가 사라지는 y (레인 맨 아래). 노트 윗부분까지 이 선을 넘으면 줄 맨 뒤로 돌아간다
 
 // ----- 노트 (배열): 간격, 개수, 처음 줄 세우기 -----
@@ -679,7 +683,18 @@ function togglePause() {
 
 // ----- 그리기 -----
 
-// 키보드 키 모양(둥근 사각형 + 글자)을 그린다. 노트와 과녁에 쓴다
+// A S K L 과녁의 투명도: 시작 화면·카운트다운에서는 또렷하게(1), 플레이가 시작되고 KEY_GUIDE_SHOW_SECONDS가 지나면
+// KEY_GUIDE_FADE_SECONDS 동안 서서히 0까지 흐려진다 (어느 키가 어느 레인인지 처음에만 알려 주는 안내)
+function keyGuideAlpha() {
+  if (gameState === "start" || gameState === "countdown") return 1;
+  if (gameState === "paused" && pausedFrom === "countdown") return 1;
+  const now = gameState === "paused" ? pauseStart : Date.now();
+  const played = (now - startTime) / 1000;        // 플레이가 시작되고 흐른 초
+  const alpha = 1 - (played - KEY_GUIDE_SHOW_SECONDS) / KEY_GUIDE_FADE_SECONDS;
+  return Math.max(0, Math.min(1, alpha));         // 0 ~ 1 사이로 자른다
+}
+
+// 키보드 키 모양(둥근 사각형 + 글자)을 그린다. A S K L 과녁에 쓴다
 // filled = true: 흰 키에 보라 글자 (노트) / false: 흰 테두리에 흰 글자 (과녁)
 function drawKeyCap(x, y, size, letter, filled) {
   ctx.beginPath();
@@ -787,8 +802,8 @@ function draw() {
   }
 
   // 5. 판정선 + 과녁: 판정선 위에 테두리만 있는 키 A S K L (노트가 여기에 겹치면 누른다)
-  ctx.strokeStyle = "white";
-  ctx.lineWidth = 3;
+  ctx.strokeStyle = "#2f80ed";                          // 판정선 색 (파란색)
+  ctx.lineWidth = 6;                                    // 판정선 두께 (3 → 6, 2배)
   ctx.beginPath();
   ctx.moveTo(LANE_X, JUDGE_Y);                          // 선 시작점
   ctx.lineTo(LANE_X + LANE_WIDTH * LANE_COUNT, JUDGE_Y); // 선 끝점
@@ -806,7 +821,9 @@ function draw() {
     const laneCenter = laneLeft + LANE_WIDTH / 2;      // 레인 가운데 x
     // 누르고 있는 레인의 과녁은 조금 작아져서 "눌린" 느낌을 준다
     const size = keys[GAME_KEYS[i]] ? TARGET_SIZE - 8 : TARGET_SIZE;
-    drawKeyCap(laneCenter - size / 2, JUDGE_Y - size / 2, size, LANE_KEY_LABELS[i], false); // 테두리만 있는 키 (가운데가 레인 가운데 · 판정선에 오게)
+    ctx.globalAlpha = keyGuideAlpha();   // 플레이 시작 3초 뒤부터 서서히 투명해진다
+    drawKeyCap(laneCenter - size / 2, TARGET_Y - size / 2, size, LANE_KEY_LABELS[i], false); // 테두리만 있는 키 (판정선 바로 아래, 레인 가운데에)
+    ctx.globalAlpha = 1;
   }
   // 스페이스바를 누르고 있으면 판정선이 굵게 빛난다
   if (keys[" "]) {
@@ -823,7 +840,9 @@ function draw() {
   ctx.clip();
   for (const note of notes) {
     const x = LANE_X + note.lane * LANE_WIDTH + (LANE_WIDTH - NOTE_SIZE) / 2;
-    drawKeyCap(x, note.y, NOTE_SIZE, LANE_KEY_LABELS[note.lane], true);   // 흰 키 위에 그 레인의 키 이름
+    // 노트 = 가로 흰 막대: 노트 자리(NOTE_SIZE × NOTE_SIZE)의 세로 가운데에 두께 NOTE_BAR_HEIGHT로 그린다
+    ctx.fillStyle = "white";
+    ctx.fillRect(LANE_X + note.lane * LANE_WIDTH + 4, note.y + (NOTE_SIZE - NOTE_BAR_HEIGHT) / 2, LANE_WIDTH - 8, NOTE_BAR_HEIGHT);   // 모서리가 각진 사각형
   }
 
   // 7. Space 노트: 레인 4개를 가로지르는 긴 막대 + 가운데에 Space 키 그림

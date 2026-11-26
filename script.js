@@ -122,7 +122,7 @@ let stage = 0;
 const STAGE_NAMES = ["초급", "중급", "상급"];
 // [플레이테스트용] true면 시작 화면에서 1 / 2 / 3 키로 초급 / 중급 / 상급을 바로 고를 수 있다
 // 플레이테스트가 끝나면 false로 바꾸면 꺼진다 (코드를 아예 지우려면 "[플레이테스트용]"으로 검색되는 부분 3곳을 지운다)
-const STAGE_SELECT_FOR_TEST = true;
+const STAGE_SELECT_FOR_TEST = false;  // 플레이테스트가 끝나서 꺼 둠 (다시 쓰려면 true)
 const COUNTDOWN_SECONDS = 3;   // 게임 시작 전 카운트다운 시간 (초). 스테이지와 상관없이 매 판 시작 때마다 나온다
 let countdownStart = Date.now(); // 카운트다운을 시작한 순간의 시각 (밀리초)
 // 일시정지: ESC로 "paused" 상태가 된다. 멈춘 동안 흐른 시간은 제한 시간·카운트다운에서 빼 준다
@@ -1036,6 +1036,10 @@ function drawStart() {
   ctx.font = "18px sans-serif";
   ctx.fillText("A S K L + Space: 노트 치기     ESC: 일시정지     R: 다시 시작", 400, 320);
   ctx.fillText("판정이 늦거나 빠르면 화면 아래 싱크 막대로 맞춰 주세요", 400, 350);
+  // 9장 모바일 대응: 터치 조작이 없어서 휴대폰에서는 플레이할 수 없다고 미리 알린다
+  ctx.fillStyle = "#bbbbbb";
+  ctx.font = "16px sans-serif";
+  ctx.fillText("PC에서 키보드로 플레이해 주세요 (휴대폰 터치는 지원하지 않아요)", 400, 385);
   // "아무 키나 눌러 시작"은 깜빡인다: Math.sin으로 투명도가 0.3 ~ 1 사이를 오간다
   ctx.globalAlpha = 0.65 + 0.35 * Math.sin(frameCount * 0.08);
   ctx.fillStyle = "#ffd166";

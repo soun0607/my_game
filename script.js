@@ -139,7 +139,7 @@ let passedNotes = 0;       // 누르지 않고 레인 밖으로 지나간 노트
 
 let botPose = "bot";      // 지금 봇이 하고 있는 포즈 (그림 이름). 봇이 노트를 맞출 때마다 바뀐다
 
-const STAGE_BOT_HIT_CHANCES = [0.9, 0.94, 1.0];   // 봇이 노트를 맞출 확률
+const STAGE_BOT_HIT_CHANCES = [0.81, 0.85, 0.9];   // 봇이 노트를 맞출 확률 (난이도 10% 낮춤: 0.9 / 0.94 / 1.0 → × 0.9)
 const STAGE_BOT_GRADE_RATIOS = [                  // 맞춘 노트의 판정 비율 [PERFECT, GREAT, GOOD]
   [0.7, 0.3, 0.0],
   [0.78, 0.22, 0.0],

@@ -54,9 +54,7 @@
 | assets/sounds/bgm_stage1.mp3 | 초급 음악 | "Funkorama" — Kevin MacLeod (incompetech.com), 101 BPM https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100474 | CC BY 4.0 |
 | assets/sounds/bgm_stage2.mp3 | 중급 음악 | "Disco con Tutti" — Kevin MacLeod (incompetech.com), 115 BPM https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1200091 | CC BY 4.0 |
 | assets/sounds/bgm_stage3.mp3 | 상급 음악 | "Future Cha Cha" — Kevin MacLeod (incompetech.com), 140 BPM https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100374 | CC BY 4.0 |
-| assets/sounds/se_perfect.mp3 | PERFECT 적중음 | Mixkit "Fairy arcade sparkle" https://mixkit.co/free-sound-effects/download/866/ | Mixkit License |
-| assets/sounds/se_hit.mp3 | GREAT·GOOD 적중음 | Mixkit "Arcade video game pop" https://mixkit.co/free-sound-effects/download/2887/ | Mixkit License |
-| assets/sounds/se_miss.mp3 | MISS 효과음 | Mixkit "Wrong answer fail notification" https://mixkit.co/free-sound-effects/download/946/ | Mixkit License |
+| assets/sounds/se_hit.mp3 | 노트 적중음 (PERFECT·GREAT·GOOD 공통) | Mixkit "Game ball tap" https://mixkit.co/free-sound-effects/download/2073/ | Mixkit License |
 | assets/sounds/se_start.mp3 | 게임 시작음 | Mixkit "Unlock game notification" https://mixkit.co/free-sound-effects/download/253/ | Mixkit License |
 | assets/sounds/se_count.mp3 | 카운트다운 삑 | Mixkit "Positive interface beep" https://mixkit.co/free-sound-effects/download/221/ | Mixkit License |
 | assets/sounds/se_clear.mp3 | 스테이지 승리 (관중 환호) | Mixkit "Huge crowd cheering victory" https://mixkit.co/free-sound-effects/download/462/ | Mixkit License |

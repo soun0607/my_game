@@ -101,6 +101,7 @@ let hitEffects = [];       // 지금 화면에 보이는 이펙트 목록. 하�
 
 // ----- 충돌 판정 (6장)과 디버그 표시 (7장) -----
 
+const SHOW_JUDGE_RANGE = true;   // true면 판정선 둘레에 판정 범위(PERFECT · GREAT · GOOD · MISS 구간)를 색 띠로 보여 준다
 let showHitbox = false;     // true면 판정 영역과 노트 판정 영역을 빨간 테두리로 그린다 (확인이 끝나면 false로 끈다)
 let showDebug = false;      // true면 왼쪽 위에 디버그 정보를 띄우고, 히트박스도 함께 그린다. D 키로 켜고 끈다 (제출할 때는 false)
 const NOTE_HITBOX_HEIGHT = 10;  // 노트 판정용 사각형의 세로 크기. 그림(50)보다 얇게, 노트 가운데에 둔다
@@ -181,16 +182,14 @@ const SOUND_FILES = {
   bgm_stage1: "assets/sounds/bgm_stage1.mp3",   // 초급 (101 BPM)
   bgm_stage2: "assets/sounds/bgm_stage2.mp3",   // 중급 (115 BPM)
   bgm_stage3: "assets/sounds/bgm_stage3.mp3",   // 상급 (140 BPM)
-  se_perfect: "assets/sounds/se_perfect.mp3",   // PERFECT 적중
-  se_hit: "assets/sounds/se_hit.mp3",           // GREAT · GOOD 적중
-  se_miss: "assets/sounds/se_miss.mp3",         // MISS
+  se_hit: "assets/sounds/se_hit.mp3",           // 노트 적중 (PERFECT · GREAT · GOOD 공통, 짧은 탭 소리). MISS는 소리 없음
   se_start: "assets/sounds/se_start.mp3",       // 시작 화면에서 키를 눌렀을 때
   se_count: "assets/sounds/se_count.mp3",       // 카운트다운 3 · 2 · 1
   se_clear: "assets/sounds/se_clear.mp3",       // 스테이지 승리 (관중 환호)
   se_lose: "assets/sounds/se_lose.mp3",         // 패배
 };
-const BGM_VOLUME = 0.3;    // 배경음악 음량 (0 ~ 1). 효과음보다 작게
-const SE_VOLUME = 0.6;     // 효과음 음량
+const BGM_VOLUME = 0.5;    // 배경음악 음량 (0 ~ 1). 리듬게임이라 음악이 잘 들리게 효과음보다 크게
+const SE_VOLUME = 0.35;    // 효과음 음량. 음악을 가리지 않게 작게
 const sounds = {};         // 불러온 소리들 (이름 → Audio). ⑥ 시동에서 채운다
 let currentBgm = null;     // 지금 나오는 배경음악 (없으면 null)
 let muted = false;         // M 키 음소거
@@ -524,10 +523,8 @@ function showJudge(distance, effectX, wide) {
   playerScore = playerScore + JUDGE_SCORES[judgeText];   // 판정별 점수를 내 점수에 더한다
   // 맞춘 자리에 이펙트를 하나 추가한다
   hitEffects.push({ x: effectX, y: JUDGE_Y, color: JUDGE_COLORS[judgeText], wide: wide, timer: HIT_EFFECT_FRAMES });
-  // 판정마다 다른 효과음
-  if (judgeText === "PERFECT") playSound("se_perfect");
-  else if (judgeText === "MISS") playSound("se_miss");
-  else playSound("se_hit");
+  // 맞춘 판정(PERFECT · GREAT · GOOD)은 같은 탭 소리, MISS는 소리 없음
+  if (judgeText !== "MISS") playSound("se_hit");
 }
 
 // 게임 키 하나를 새로 눌렀을 때 할 일: 그 방향 포즈를 취하고, 판정 영역과 겹치는 노트를 맞췄는지 확인한다
@@ -770,6 +767,23 @@ function draw() {
     ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
     ctx.lineWidth = 1;
     ctx.strokeRect(x, LANE_TOP, LANE_WIDTH, LANE_HEIGHT); // 레인 테두리
+  }
+
+  // 4-1. 판정 범위 띠: 노트 가운데가 이 띠 안에 있을 때 누르면 판정된다 (싱크를 바꾸면 띠도 같이 움직인다)
+  // 안쪽일수록 좋은 판정: 가운데 노랑 = PERFECT, 하늘 = GREAT, 연두 = GOOD, 바깥 빨강 = MISS
+  // 정확도 = 1 - 거리 ÷ 판정 범위 이므로, 각 판정이 시작되는 거리 = (1 - 기준 정확도) × 판정 범위
+  if (SHOW_JUDGE_RANGE) {
+    const center = judgeCenterY();
+    const zones = [                                   // 바깥부터 안쪽 순서로 겹쳐 칠한다
+      { half: JUDGE_RANGE, color: "rgba(255, 107, 107, 0.18)" },                            // MISS 구간까지 포함한 전체 범위
+      { half: (1 - MISS_ACCURACY) * JUDGE_RANGE, color: "rgba(184, 242, 160, 0.22)" },      // GOOD 이상
+      { half: (1 - GREAT_ACCURACY) * JUDGE_RANGE, color: "rgba(143, 211, 255, 0.30)" },     // GREAT 이상
+      { half: (1 - PERFECT_ACCURACY) * JUDGE_RANGE, color: "rgba(255, 209, 102, 0.45)" },   // PERFECT
+    ];
+    for (const zone of zones) {
+      ctx.fillStyle = zone.color;
+      ctx.fillRect(LANE_X, center - zone.half, LANE_WIDTH * LANE_COUNT, zone.half * 2);
+    }
   }
 
   // 5. 판정선 + 과녁: 판정선 위에 테두리만 있는 키 A S K L (노트가 여기에 겹치면 누른다)

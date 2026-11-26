@@ -107,7 +107,7 @@ let hitEffects = [];       // 지금 화면에 보이는 이펙트 목록. 하�
 
 // ----- 충돌 판정 (6장)과 디버그 표시 (7장) -----
 
-const SHOW_JUDGE_RANGE = true;   // true면 판정선 둘레에 판정 범위(PERFECT · GREAT · GOOD · MISS 구간)를 색 띠로 보여 준다
+const SHOW_JUDGE_RANGE = false;   // true면 판정선 둘레에 판정 범위(PERFECT · GREAT · GOOD · MISS 구간)를 색 띠로 보여 준다
 let showHitbox = false;     // true면 판정 영역과 노트 판정 영역을 빨간 테두리로 그린다 (확인이 끝나면 false로 끈다)
 let showDebug = false;      // true면 왼쪽 위에 디버그 정보를 띄우고, 히트박스도 함께 그린다. D 키로 켜고 끈다 (제출할 때는 false)
 const NOTE_HITBOX_HEIGHT = 10;  // 노트 판정용 사각형의 세로 크기. 그림(50)보다 얇게, 노트 가운데에 둔다

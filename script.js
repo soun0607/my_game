@@ -65,7 +65,7 @@ let noteSpeed = STAGE_SPEEDS[0];   // 지금은 스테이지 1(초급). 1초에 
 // ----- 입력과 판정 (5장) -----
 
 const INPUT_MODE = "B";    // 조작 방식. "A" = 키 이벤트 안에서 바로 판정 (비교 실험용), "B" = keys에 기록하고 게임 루프에서 판정
-const JUDGE_RANGE = 50;    // 노트 가운데가 판정선에서 이 거리(px) 안에 있을 때 키를 누르면 맞춘 것
+const JUDGE_RANGE = 70;    // 노트 가운데가 판정선에서 이 거리(px) 안에 있을 때 키를 누르면 판정한다 (MISS 구간을 넓히려고 50 → 70)
 // 조작키: 플레이테스트 피드백으로 방향키 대신 A S K L (왼손 두 손가락 + 오른손 두 손가락)
 const KEY_TO_LANE = { a: 0, s: 1, k: 2, l: 3 };  // 키 → 레인 번호 (레인 순서: ← ↓ ↑ →)
 const GAME_KEYS = ["a", "s", "k", "l", " "];   // 게임에 쓰는 키 (" "는 스페이스바)
@@ -91,12 +91,14 @@ try {
 // ----- 판정 등급과 이펙트 -----
 
 // 판정 등급: 정확도 = 판정선에 얼마나 가깝게 눌렀는가 (판정선 한가운데 100%, 판정 범위 끝 0%)
-const PERFECT_ACCURACY = 0.85;  // 85% 이상 → PERFECT
-const GREAT_ACCURACY = 0.70;    // 70% 이상 ~ 85% 미만 → GREAT
-const MISS_ACCURACY = 0.20;     // 20% 이상 ~ 70% 미만 → GOOD, 20% 미만 → MISS (너무 일찍/늦게 눌렀다)
+const PERFECT_ACCURACY = 0.86;  // 86% 이상 → PERFECT (판정선에서 약 10px 안)
+const GREAT_ACCURACY = 0.69;    // 69% 이상 ~ 86% 미만 → GREAT (약 21.7px 안)
+const MISS_ACCURACY = 0.43;     // 43% 이상 ~ 69% 미만 → GOOD (약 39.9px 안), 43% 미만 → MISS (약 40 ~ 70px: 너무 일찍/늦게 눌렀다)
 const JUDGE_SHOW_FRAMES = 40;   // 판정 글자를 화면에 띄워 두는 시간 (프레임 수, 60 = 약 1초)
 let judgeText = "";        // 지금 띄울 판정 글자 ("PERFECT" / "GREAT" / "GOOD" / "MISS")
 let judgeTimer = 0;        // 판정 글자가 사라지기까지 남은 프레임 수
+const MISS_FLASH_FRAMES = 20;   // MISS 때 레인 전체가 어두운 빨강으로 번쩍이는 시간 (프레임 수, 60 = 약 1초)
+let missFlashTimer = 0;    // 빨간 번쩍임이 사라지기까지 남은 프레임 수
 const JUDGE_COLORS = { PERFECT: "#ffd166", GREAT: "#8fd3ff", GOOD: "#b8f2a0", MISS: "#ff6b6b" }; // 판정별 색 (글자와 이펙트에 같이 쓴다)
 
 // 입력 이펙트
@@ -509,6 +511,13 @@ function botPlay(pose) {
 
 // 노트를 맞췄을 때: 판정 기준과의 거리로 정확도를 계산해 판정 등급을 정하고, 점수·개수·이펙트를 기록한다
 
+// 노트를 놓쳤을 때(누르지 않고 레인 아래로 지나갔을 때) MISS 글자를 띄운다. 개수는 지나간 곳에서 센다
+function showMissText() {
+  judgeText = "MISS";
+  judgeTimer = JUDGE_SHOW_FRAMES;
+  missFlashTimer = MISS_FLASH_FRAMES;             // 레인 전체 빨간 번쩍임
+}
+
 function showJudge(distance, effectX, wide) {
   // 거리 0이면 1(100%), 판정 범위 끝이면 0(0%). 소수 계산 오차(0.30000000000000004 같은)를 없애려고 소수 둘째 자리에서 반올림한다
   const accuracy = Math.round((1 - distance / JUDGE_RANGE) * 100) / 100;
@@ -522,6 +531,7 @@ function showJudge(distance, effectX, wide) {
     judgeText = "MISS";
   }
   judgeTimer = JUDGE_SHOW_FRAMES;                 // 지금부터 JUDGE_SHOW_FRAMES 동안 보여 준다
+  if (judgeText === "MISS") missFlashTimer = MISS_FLASH_FRAMES;   // MISS면 레인 전체 빨간 번쩍임
   gradeCounts[judgeText] = gradeCounts[judgeText] + 1;       // 판정별 개수를 센다
   accuracySum = accuracySum + Math.max(0, accuracy);         // 정확도를 더한다 (판정 범위 끝보다 멀면 0으로)
   playerScore = playerScore + JUDGE_SCORES[judgeText];   // 판정별 점수를 내 점수에 더한다
@@ -537,7 +547,8 @@ function pressKey(key) {
   if (key === " ") {
     playerPose = "player_space";
     // Space 노트 판정 사각형이 판정 영역(레인 전체 폭)과 겹치면 맞춘 것
-    if (checkCollision(spaceHitbox(), judgeBox())) {
+    // 단, 막대가 레인 아래(화면 밖)로 넘어가기 시작했으면 판정하지 않는다 (Space 막대 두께 12px의 절반 = 6)
+    if (checkCollision(spaceHitbox(), judgeBox()) && spaceNoteY + 20 + 6 <= NOTE_END_Y) {
       const distance = Math.abs(spaceNoteY + 20 - judgeCenterY());   // 판정 등급은 판정 기준과의 거리로 정한다
       showJudge(distance, LANE_X + (LANE_WIDTH * LANE_COUNT) / 2, true);
       // 판정선을 지나기 전에 맞춰서 노트가 사라지면, 봇은 이 노트를 칠 기회가 없다 → 지금 봇도 치게 한다
@@ -556,6 +567,7 @@ function pressKey(key) {
   let closestDistance = Infinity;
   for (const note of notes) {
     if (!checkCollision(noteHitbox(note), box)) continue;   // 판정 영역과 안 겹치면 건너뛴다
+    if (note.y + NOTE_SIZE / 2 + NOTE_BAR_HEIGHT / 2 > NOTE_END_Y) continue;   // 막대가 레인 아래(화면 밖)로 넘어가기 시작한 노트는 판정하지 않는다
     const distance = Math.abs(note.y + NOTE_SIZE / 2 - judgeCenterY());  // 노트 가운데가 판정 기준에서 몇 px 떨어져 있는가
     if (distance < closestDistance) {
       closest = note;
@@ -622,6 +634,7 @@ function resetGame() {
   playerPose = "player";
   botPose = "bot";
   judgeTimer = 0;
+  missFlashTimer = 0;
   hitEffects = [];
   accuracySum = 0;               // 정확도 기록도 처음부터
   gradeCounts = { PERFECT: 0, GREAT: 0, GOOD: 0, MISS: 0 };
@@ -795,10 +808,16 @@ function draw() {
       { half: (1 - GREAT_ACCURACY) * JUDGE_RANGE, color: "rgba(143, 211, 255, 0.30)" },     // GREAT 이상
       { half: (1 - PERFECT_ACCURACY) * JUDGE_RANGE, color: "rgba(255, 209, 102, 0.45)" },   // PERFECT
     ];
+    // 레인 사각형 안쪽만 칠한다 (레인 밖은 판정되지 않으므로 띠도 보이지 않게 자른다)
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(LANE_X, LANE_TOP, LANE_WIDTH * LANE_COUNT, LANE_HEIGHT);
+    ctx.clip();
     for (const zone of zones) {
       ctx.fillStyle = zone.color;
       ctx.fillRect(LANE_X, center - zone.half, LANE_WIDTH * LANE_COUNT, zone.half * 2);
     }
+    ctx.restore();
   }
 
   // 5. 판정선 + 과녁: 판정선 위에 테두리만 있는 키 A S K L (노트가 여기에 겹치면 누른다)
@@ -869,6 +888,12 @@ function draw() {
       const box = judgeBox(i);
       ctx.strokeRect(box.x, box.y, box.width, box.height);   // 레인별 판정 영역
     }
+  }
+
+  // 7-0. MISS 이펙트: 레인 전체를 어두운 빨강으로 덮었다가 점점 투명하게 (MISS_FLASH_FRAMES 동안)
+  if (missFlashTimer > 0) {
+    ctx.fillStyle = "rgba(150, 20, 30, " + (0.2 * missFlashTimer / MISS_FLASH_FRAMES) + ")";   // 처음 20% → 0%
+    ctx.fillRect(LANE_X, LANE_TOP, LANE_WIDTH * LANE_COUNT, LANE_HEIGHT);
   }
 
   // 7-1. 이펙트 2: 맞춘 자리에서 판정 색깔의 별과 고리가 퍼지며 사라진다
@@ -1064,6 +1089,7 @@ function gameLoop() {
   // (반짝이·관중 애니메이션과 판정 글자·이펙트는 결과 화면에서도 계속 움직인다)
   frameCount = frameCount + 1;
   if (judgeTimer > 0) judgeTimer = judgeTimer - 1;   // 판정 글자가 사라질 때까지 남은 시간을 줄인다
+  if (missFlashTimer > 0) missFlashTimer = missFlashTimer - 1;   // 빨간 번쩍임도 점점 사라진다
   for (const effect of hitEffects) effect.timer = effect.timer - 1;   // 이펙트 남은 시간을 줄이고
   hitEffects = hitEffects.filter((effect) => effect.timer > 0);      // 다 끝난 이펙트는 목록에서 뺀다
 
@@ -1125,12 +1151,14 @@ function gameLoop() {
       if (note.y > NOTE_END_Y) {                   // 노트 윗부분까지 레인 밖으로 다 나가면
         gradeCounts.MISS = gradeCounts.MISS + 1;   // 못 누르고 지나간 노트 → MISS로 센다 (정확도 0%)
         passedNotes = passedNotes + 1;
+        showMissText();                            // 화면(레인) 밖으로 내려간 노트 = 놓친 것 → MISS 표시
         respawnNote(note);
       }
     }
     if (spaceNoteY > NOTE_END_Y) {               // Space 노트도 레인 밖으로 다 나가면
       gradeCounts.MISS = gradeCounts.MISS + 1;
       passedNotes = passedNotes + 1;
+      showMissText();
       respawnSpaceNote();
     }
   } // if (gameState === "playing") 끝
